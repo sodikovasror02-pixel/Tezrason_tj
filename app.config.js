@@ -1,4 +1,8 @@
 // Конфигуратсияи динамикӣ (app.json + муҳит). Калидҳо аз муҳит, на дар код.
+
+/** ID-и лоиҳа дар expo.dev (сирр нест). Пас аз сохтани лоиҳа ин ҷо гузоред. */
+const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || null;
+
 module.exports = ({ config }) => {
   const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
   const permission =
@@ -35,6 +39,6 @@ module.exports = ({ config }) => {
       ],
       ...(mapsKey ? [['react-native-maps', { androidGoogleMapsApiKey: mapsKey }]] : []),
     ],
-    extra: { ...config.extra },
+    extra: { ...config.extra, ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}) },
   };
 };
