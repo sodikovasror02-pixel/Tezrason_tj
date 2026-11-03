@@ -37,3 +37,8 @@ src/screens/*            Home, Food, Restaurant, Market, Cart, Taxi, Orders, Pro
 4. Пардохт: Корти Миллӣ / DC Wallet / Alif (API-и бонк)
 5. Барномаҳои алоҳида: курьер/ронанда, панели тарабхона, админ
 6. Сохтан: `npx eas-cli@latest build -p android`
+
+## Харита
+- iOS: Apple Maps; Android: Google Maps. Дар Expo Go калид лозим нест.
+- Барои APK/AAB: `GOOGLE_MAPS_API_KEY=... npx eas-cli@latest build -p android` (ниг. `app.config.js`).
+- Дар веб — нақшаи схематикӣ (`RouteMap.web.tsx`), танҳо барои санҷиш.

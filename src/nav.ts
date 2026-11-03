@@ -8,7 +8,8 @@ export type Route =
   | { name: 'restaurant'; id: number }
   | { name: 'market' }
   | { name: 'cart' }
-  | { name: 'taxi' };
+  | { name: 'taxi' }
+  | { name: 'order'; id: number };
 
 export type Nav = {
   push: (r: Route) => void;

@@ -6,13 +6,14 @@ import { ZodError } from 'zod';
 import { Config, Db, HttpError, RedisClient } from './infra.js';
 import { Realtime } from './realtime.js';
 import { SmsSender } from './sms.js';
+import type { Router } from './routing.js';
 import type { Role } from './domain/status.js';
 import { authRoutes } from './routes/auth.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { orderRoutes } from './routes/orders.js';
 
 export type Me = { id: number; phone: string; name: string | null; role: Role; merchant_id: number | null };
-export type Deps = { cfg: Config; db: Db; redis: RedisClient; rt: Realtime; sms: SmsSender };
+export type Deps = { cfg: Config; db: Db; redis: RedisClient; rt: Realtime; sms: SmsSender; router: Router };
 export type App = FastifyInstance & {
   deps: Deps;
   auth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;

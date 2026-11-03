@@ -5,12 +5,13 @@ import { api } from '../api/client';
 import type { Order } from '../api/types';
 import { Button, C, Card, ErrorBanner, s } from '../components/ui';
 import { fmt } from '../data/pricing';
+import type { Nav } from '../nav';
 import type { StringKey } from '../i18n/strings';
 
 const KIND_EMOJI = { food: '🍔', market: '🛒', taxi: '🚕' } as const;
 const FINAL = ['delivered', 'completed', 'cancelled'];
 
-export default function OrdersScreen() {
+export default function OrdersScreen({ nav }: { nav: Nav }) {
   const { t, orders, ordersLoading, refreshOrders, errText, wsConnected } = useStore();
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +45,7 @@ export default function OrdersScreen() {
         const cancelled = o.status === 'cancelled';
         const title = o.kind === 'taxi' ? `${o.from_name ?? '?'} → ${o.to_name ?? '?'}` : o.merchant_name ?? '';
         return (
-          <Card key={o.id} style={{ gap: 10 }}>
+          <Card key={o.id} style={{ gap: 10 }} onPress={() => nav.push({ name: 'order', id: o.id })}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Text style={{ fontSize: 26 }}>{KIND_EMOJI[o.kind]}</Text>
               <View style={{ flex: 1 }}>

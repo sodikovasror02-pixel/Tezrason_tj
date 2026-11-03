@@ -44,6 +44,31 @@ export type FareQuote = {
   total: number;
 };
 
+export type RouteInfo = {
+  distanceKm: number;
+  durationMin: number;
+  straightKm: number;
+  geometry: [number, number][];
+  source: 'osrm' | 'estimate';
+};
+export type TaxiQuoteResponse = { route: RouteInfo; quotes: FareQuote[] };
+
+export type OrderDetail = Order & {
+  items: { product_id: number; name_tj: string; name_ru: string; price: number; qty: number }[];
+  ride: null | {
+    tariff_id: string;
+    from_lat: number; from_lon: number; to_lat: number; to_lon: number;
+    from_name: string | null; to_name: string | null;
+    route_km: string; minutes: string; surge: string;
+    geometry: [number, number][];
+    routeSource: 'osrm' | 'estimate';
+  };
+  driver_id: number | null;
+  lat: number | null;
+  lon: number | null;
+  driverLocation: { lat: number; lon: number } | null;
+};
+
 export type CartQuote = { subtotal: number; deliveryFee: number; serviceFee: number; total: number };
 
 export type OrderKind = 'food' | 'market' | 'taxi';

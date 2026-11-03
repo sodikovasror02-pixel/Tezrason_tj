@@ -42,18 +42,29 @@ export function surgeAt(date: Date): number {
 }
 
 /**
- * C = max(C_min, round((C₀ + c_km·d + c_min·t)·k_surge)),  t = d / v · 60
- * Яклухткунӣ то 1 сомонӣ (100 дирам) — барои пардохти нақд.
+ * C = max(C_min, round₁₀₀((C₀ + c_km·d + c_min·t)·k_surge))
+ * d, t — аз масир (OSRM ё тахмин). Яклухткунӣ то 1 сомонӣ — барои пардохти нақд.
  */
-export function taxiFare(from: GeoPoint, to: GeoPoint, t: Tariff, surge: number): FareQuote {
-  const straightKm = haversineKm(from, to);
-  const routeKm = straightKm * ROUTE_FACTOR;
-  const minutes = (routeKm / AVG_SPEED_KMH) * 60;
-  const distCost = Math.round(t.per_km * routeKm);
-  const timeCost = Math.round(t.per_min * minutes);
+export function taxiFare(
+  route: { straightKm: number; distanceKm: number; durationMin: number },
+  t: Tariff,
+  surge: number,
+): FareQuote {
+  const distCost = Math.round(t.per_km * route.distanceKm);
+  const timeCost = Math.round(t.per_min * route.durationMin);
   const raw = (t.base + distCost + timeCost) * surge;
   const total = Math.max(t.min_fare, Math.round(raw / 100) * 100);
-  return { tariffId: t.id, straightKm, routeKm, minutes, base: t.base, distCost, timeCost, surge, total };
+  return {
+    tariffId: t.id,
+    straightKm: route.straightKm,
+    routeKm: route.distanceKm,
+    minutes: route.durationMin,
+    base: t.base,
+    distCost,
+    timeCost,
+    surge,
+    total,
+  };
 }
 
 /** Расонидан: C = max(700, 500 + 150·d) дирам, яклухт то 1 сомонӣ */

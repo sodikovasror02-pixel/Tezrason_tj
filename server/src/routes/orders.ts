@@ -24,7 +24,13 @@ function mergeItems(items: z.infer<typeof Items>) {
 }
 
 export async function orderRoutes(app: App) {
-  const { db, redis, rt, cfg } = app.deps;
+  const { db, redis, rt, cfg, router } = app.deps;
+
+  /** Масир + масофаи мустақим (барои шаффофияти ҳисоб) */
+  async function routeFor(from: { lat: number; lon: number }, to: { lat: number; lon: number }) {
+    const r = await router.route(from, to);
+    return { ...r, straightKm: haversineKm(from, to) };
+  }
 
   /** Нархҳоро ҲАМЕША аз база мегирем — ба нархи клиент бовар намекунем */
   async function priceCart(c: pg.PoolClient | typeof db, merchantId: number, items: z.infer<typeof Items>, to: { lat: number; lon: number }) {
@@ -140,7 +146,8 @@ export async function orderRoutes(app: App) {
     const b = z.object({ from: Point, to: Point }).parse(req.body);
     const tariffs = (await db.query<Tariff>('SELECT id, base, per_km, per_min, min_fare FROM tariffs ORDER BY base')).rows;
     const surge = surgeAt(new Date());
-    return tariffs.map((t) => taxiFare(b.from, b.to, t, surge));
+    const route = await routeFor(b.from, b.to);
+    return { route, quotes: tariffs.map((t) => taxiFare(route, t, surge)) };
   });
 
   app.post('/rides', { preHandler: app.auth }, async (req, reply) => {
@@ -156,8 +163,9 @@ export async function orderRoutes(app: App) {
       .parse(req.body);
     const t = (await db.query<Tariff>('SELECT id, base, per_km, per_min, min_fare FROM tariffs WHERE id = $1', [b.tariffId])).rows[0];
     if (!t) throw new HttpError(400, 'tariff_not_found');
-    const q = taxiFare(b.from, b.to, t, surgeAt(new Date()));
-    if (q.straightKm < 0.2) throw new HttpError(400, 'ride_too_short');
+    if (haversineKm(b.from, b.to) < 0.2) throw new HttpError(400, 'ride_too_short');
+    const route = await routeFor(b.from, b.to);
+    const q = taxiFare(route, t, surgeAt(new Date()));
 
     const order = await tx(db, async (c) => {
       const { rows } = await c.query(
@@ -182,7 +190,7 @@ export async function orderRoutes(app: App) {
         rt.publish(`user:${d.id}`, 'ride.offer', { orderId: Number(order.id), pickupKm: d.km, from: b.from, to: b.to, total: q.total, tariffId: t.id }),
       ),
     );
-    return reply.code(201).send({ ...order, quote: q, offeredTo: drivers.length });
+    return reply.code(201).send({ ...order, quote: q, route, offeredTo: drivers.length });
   });
 
   // ───────────── Ронанда / Курьер ─────────────
@@ -297,7 +305,9 @@ export async function orderRoutes(app: App) {
       const pos = (await redis.geopos(DRIVERS_GEO, String(o.driver_id)))[0];
       if (pos) driverLocation = { lon: Number(pos[0]), lat: Number(pos[1]) };
     }
-    return { ...full.rows[0], items: items.rows, ride: ride.rows[0] ?? null, events: events.rows, driverLocation };
+    const r = ride.rows[0];
+    const route = r ? await router.route({ lat: r.from_lat, lon: r.from_lon }, { lat: r.to_lat, lon: r.to_lon }) : null;
+    return { ...full.rows[0], items: items.rows, ride: r ? { ...r, geometry: route!.geometry, routeSource: route!.source } : null, events: events.rows, driverLocation };
   });
 
   app.post('/orders/:id/status', { preHandler: app.auth }, async (req) => {

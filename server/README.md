@@ -45,3 +45,16 @@ npm test             # тестҳои интегратсионӣ (база: hizm
 - d₀ — haversine (R = 6371 км); d = 1.3·d₀; t = d / 25 км/с
 - Такси: C = max(C_min, round₁₀₀((C₀ + c_km·d + c_min·t)·k)), k = 1.3 дар 07–09, 17–19 (UTC+5)
 - Расонидан: C = max(700, round₁₀₀(500 + 150·d)) дирам; хизматрасонӣ 5 %
+
+## Масиркашӣ (OSRM)
+`OSRM_URL` холӣ → ҳисоби тахминӣ (d = 1.3·d₀, v = 25 км/с). Сервери худи OSRM барои Тоҷикистон:
+```bash
+mkdir osrm && cd osrm
+wget https://download.geofabrik.de/asia/tajikistan-latest.osm.pbf
+docker run -t -v "$PWD:/data" ghcr.io/project-osrm/osrm-backend osrm-extract -p /opt/car.lua /data/tajikistan-latest.osm.pbf
+docker run -t -v "$PWD:/data" ghcr.io/project-osrm/osrm-backend osrm-partition /data/tajikistan-latest.osrm
+docker run -t -v "$PWD:/data" ghcr.io/project-osrm/osrm-backend osrm-customize /data/tajikistan-latest.osrm
+docker run -d -p 5000:5000 -v "$PWD:/data" ghcr.io/project-osrm/osrm-backend osrm-routed --algorithm mld /data/tajikistan-latest.osrm
+```
+Баъд `OSRM_URL=http://localhost:5000`. Вақти OSRM бе трафик аст: t = t_osrm · `TRAFFIC_FACTOR` (пешфарз 1.3, бояд аз рӯи сафарҳои воқеӣ калибровка шавад).
+Агар OSRM ҷавоб надиҳад (3 с) → худкор ба ҳисоби тахминӣ мегузарад. Масирҳо дар Redis 1 соат кэш мешаванд.

@@ -13,6 +13,7 @@ import CartScreen from './src/screens/CartScreen';
 import TaxiScreen from './src/screens/TaxiScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import OrderScreen from './src/screens/OrderScreen';
 
 function Root() {
   const { t, booting, bootError, retryBoot, user, errText } = useStore();
@@ -42,8 +43,9 @@ function Root() {
     case 'market': screen = <MarketScreen nav={nav} />; break;
     case 'cart': screen = <CartScreen nav={nav} />; break;
     case 'taxi': screen = <TaxiScreen nav={nav} />; break;
+    case 'order': screen = <OrderScreen nav={nav} id={route.id} />; break;
     case 'tabs':
-      screen = route.tab === 'home' ? <HomeScreen nav={nav} /> : route.tab === 'orders' ? <OrdersScreen /> : <ProfileScreen />;
+      screen = route.tab === 'home' ? <HomeScreen nav={nav} /> : route.tab === 'orders' ? <OrdersScreen nav={nav} /> : <ProfileScreen />;
       break;
   }
 

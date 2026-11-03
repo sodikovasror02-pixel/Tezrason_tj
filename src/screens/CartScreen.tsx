@@ -7,6 +7,7 @@ import type { CartQuote, Order } from '../api/types';
 import { Button, C, Card, Chip, ErrorBanner, Header, QtyStepper, Row, s } from '../components/ui';
 import { defaultDeliveryPoint } from '../data/mock';
 import { fmt } from '../data/pricing';
+import { useMyLocation } from '../hooks/useMyLocation';
 
 export default function CartScreen({ nav }: { nav: Nav }) {
   const { t, tr, cart, changeQty, clearCart, refreshOrders, errText } = useStore();
@@ -15,6 +16,9 @@ export default function CartScreen({ nav }: { nav: Nav }) {
   const [quote, setQuote] = useState<CartQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Нуқтаи расонидан: GPS, вагарна нуқтаи пешфарз
+  const me = useMyLocation();
+  const dest = me.point ?? defaultDeliveryPoint;
 
   const items = cart.lines.map((x) => ({ productId: x.productId, qty: x.qty }));
   const itemsKey = JSON.stringify(items);
@@ -26,7 +30,7 @@ export default function CartScreen({ nav }: { nav: Nav }) {
     setQuote(null);
     const h = setTimeout(async () => {
       try {
-        const q = await api<CartQuote>('POST', '/quotes/cart', { merchantId: cart.merchantId, items, to: defaultDeliveryPoint });
+        const q = await api<CartQuote>('POST', '/quotes/cart', { merchantId: cart.merchantId, items, to: dest });
         if (alive) {
           setQuote(q);
           setError(null);
@@ -40,7 +44,7 @@ export default function CartScreen({ nav }: { nav: Nav }) {
       clearTimeout(h);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart.merchantId, itemsKey]);
+  }, [cart.merchantId, itemsKey, dest.lat, dest.lon]);
 
   const header = <Header title={t('cart')} onBack={nav.back} />;
   if (!cart.lines.length)
@@ -58,7 +62,7 @@ export default function CartScreen({ nav }: { nav: Nav }) {
     setBusy(true);
     setError(null);
     try {
-      await api<Order>('POST', '/orders', { merchantId: cart.merchantId, items, address: address.trim(), to: defaultDeliveryPoint, payment: pay });
+      await api<Order>('POST', '/orders', { merchantId: cart.merchantId, items, address: address.trim(), to: dest, payment: pay });
       clearCart();
       await refreshOrders().catch(() => {});
       nav.reset({ name: 'tabs', tab: 'orders' });

@@ -41,6 +41,8 @@ type Store = {
   ordersLoading: boolean;
   refreshOrders: () => Promise<void>;
   wsConnected: boolean;
+  /** Ҷойгиршавии охирини ронанда/курьер аз рӯи orderId (аз WebSocket) */
+  driverLocations: Record<number, { lat: number; lon: number }>;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -54,6 +56,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [driverLocations, setDriverLocations] = useState<Record<number, { lat: number; lon: number }>>({});
   const tokenRef = useRef<string | null>(null);
 
   const signOut = useCallback(async () => {
@@ -123,6 +126,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
       ws.onmessage = (ev) => {
         const m = JSON.parse(String(ev.data)) as WsMessage;
+        if (m.event === 'driver.location') {
+          const d = m.data as { orderId: number; lat: number; lon: number };
+          setDriverLocations((x) => ({ ...x, [d.orderId]: { lat: d.lat, lon: d.lon } }));
+        }
         if (m.event === 'order.status') {
           const d = m.data as { orderId: number; status: OrderStatus };
           setOrders((os) => {
@@ -191,8 +198,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ordersLoading,
       refreshOrders,
       wsConnected,
+      driverLocations,
     };
-  }, [lang, booting, bootError, boot, user, signIn, signOut, cart, orders, ordersLoading, refreshOrders, wsConnected]);
+  }, [lang, booting, bootError, boot, user, signIn, signOut, cart, orders, ordersLoading, refreshOrders, wsConnected, driverLocations]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

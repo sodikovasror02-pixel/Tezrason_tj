@@ -5,6 +5,7 @@ import { createDb, createRedis, Db, loadConfig, migrate, RedisClient } from '../
 import { Realtime } from '../src/realtime.js';
 import { ConsoleSms } from '../src/sms.js';
 import { haversineKm, taxiFare } from '../src/domain/pricing.js';
+import { EstimateRouter } from '../src/routing.js';
 
 const ADMIN = '+992900000001';
 const OZODI = { lat: 38.5762, lon: 68.7797 };
@@ -23,7 +24,7 @@ beforeAll(async () => {
   sub = createRedis(cfg.redisUrl);
   const rt = new Realtime(redis, sub);
   await rt.start();
-  app = await buildApp({ cfg, db, redis, rt, sms });
+  app = await buildApp({ cfg, db, redis, rt, sms, router: new EstimateRouter() });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const addr = app.server.address() as { port: number };
   base = `127.0.0.1:${addr.port}`;
@@ -85,15 +86,16 @@ describe('pricing', () => {
   it('haversine: Майдони Озодӣ → Фурудгоҳ ≈ 5.38 км', () => {
     expect(haversineKm(OZODI, AIRPORT)).toBeCloseTo(5.38, 2);
   });
-  it('такси Эконом = 24 сомонӣ (2400 дирам)', () => {
-    const q = taxiFare(OZODI, AIRPORT, { id: 'econom', base: 500, per_km: 200, per_min: 30, min_fare: 1000 }, 1);
+  it('такси Эконом = 24 сомонӣ (2400 дирам)', async () => {
+    const route = await new EstimateRouter().route(OZODI, AIRPORT);
+    const q = taxiFare({ ...route, straightKm: haversineKm(OZODI, AIRPORT) }, { id: 'econom', base: 500, per_km: 200, per_min: 30, min_fare: 1000 }, 1);
     // 500 + 200·6.99 + 30·16.78 = 500 + 1398 + 503 = 2401 → 2400
     expect(q.distCost).toBe(1398);
     expect(q.timeCost).toBe(503);
     expect(q.total).toBe(2400);
   });
   it('ҳадди ақал (min_fare) барои сафари кӯтоҳ', () => {
-    const q = taxiFare(OZODI, { lat: 38.5772, lon: 68.7797 }, { id: 'x', base: 500, per_km: 200, per_min: 30, min_fare: 1000 }, 1);
+    const q = taxiFare({ straightKm: 0.1, distanceKm: 0.15, durationMin: 0.4 }, { id: 'x', base: 500, per_km: 200, per_min: 30, min_fare: 1000 }, 1);
     expect(q.total).toBe(1000);
   });
 });
@@ -192,8 +194,10 @@ describe('такси: диспетчеризатсия ва race condition', () 
     const nearWs = await openWs(near.token);
     const custWs = await openWs(customer.token);
 
-    const quotes = (await call('POST', '/quotes/taxi', undefined, { from: OZODI, to: AIRPORT })).body;
-    expect(quotes.map((q: any) => q.tariffId)).toEqual(['econom', 'comfort', 'business']);
+    const qr = (await call('POST', '/quotes/taxi', undefined, { from: OZODI, to: AIRPORT })).body;
+    expect(qr.quotes.map((q: any) => q.tariffId)).toEqual(['econom', 'comfort', 'business']);
+    expect(qr.route.source).toBe('estimate');
+    expect(qr.route.geometry).toHaveLength(2);
 
     const r = await call('POST', '/rides', customer.token, { from: OZODI, to: AIRPORT, fromName: 'Озодӣ', toName: 'Фурудгоҳ', tariffId: 'econom', payment: 'cash' });
     expect(r.status).toBe(201);
@@ -217,6 +221,7 @@ describe('такси: диспетчеризатсия ва race condition', () 
     const det = (await call('GET', `/orders/${r.body.id}`, customer.token)).body;
     expect(det.driverLocation.lat).toBeCloseTo(38.5765, 4);
     expect(Number(det.ride.route_km)).toBeCloseTo(6.99, 1);
+    expect(det.ride.geometry[0]).toEqual([OZODI.lat, OZODI.lon]);
 
     // Ронандаи банд пешниҳод намегирад
     const r2 = await call('POST', '/rides', customer.token, { from: OZODI, to: AIRPORT, tariffId: 'econom', payment: 'cash' });

@@ -11,6 +11,10 @@ export type Config = {
   isProd: boolean;
   adminPhones: string[];
   dispatchRadiusKm: number;
+  /** Суроғаи OSRM; холӣ → ҳисоби тахминӣ */
+  osrmUrl: string | null;
+  /** t = t_osrm · k (OSRM вақтро бе трафик медиҳад) */
+  trafficFactor: number;
 };
 
 export function loadConfig(env = process.env): Config {
@@ -23,8 +27,10 @@ export function loadConfig(env = process.env): Config {
     redisUrl: env.REDIS_URL ?? 'redis://localhost:6379',
     jwtSecret,
     isProd,
-    adminPhones: (env.ADMIN_PHONES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    adminPhones: (env.ADMIN_PHONES ?? '').split(',').map((s: string) => s.trim()).filter(Boolean),
     dispatchRadiusKm: Number(env.DISPATCH_RADIUS_KM ?? 5),
+    osrmUrl: env.OSRM_URL || null,
+    trafficFactor: Number(env.TRAFFIC_FACTOR ?? 1.3),
   };
 }
 
