@@ -33,7 +33,7 @@ npx eas-cli@latest init
 GOOGLE_MAPS_API_KEY=... npx eas-cli@latest build -p android --profile preview
 ```
 - `preview` → `.apk` барои насби мустақим; `production` → `.aab` барои Google Play.
-- Суроғаи сервер дар `eas.json` → `EXPO_PUBLIC_API_URL` (ҳоло `https://api.tezrason.tj` — иваз кунед).
+- Суроғаи сервер дар `eas.json` → `EXPO_PUBLIC_API_URL` (ҳоло `https://tezrason-api.onrender.com` — иваз кунед).
 - Калиди Google Maps: Google Cloud Console → Maps SDK for Android (бо маҳдудияти `tj.tezrason.app` + SHA‑1).
 - Барои Google Play иҷозати `ACCESS_BACKGROUND_LOCATION` эъломия ва видеои кӯтоҳ талаб мекунад.
 
