@@ -271,9 +271,14 @@ export async function orderRoutes(app: App) {
   app.get('/orders', { preHandler: app.auth }, async (req) => {
     const me = req.me;
     const where =
-      me.role === 'merchant' ? 'merchant_id = $1' : me.role === 'driver' || me.role === 'courier' ? 'driver_id = $1' : me.role === 'admin' ? '$1::bigint IS NOT NULL' : 'user_id = $1';
+      me.role === 'merchant' ? 'o.merchant_id = $1' : me.role === 'driver' || me.role === 'courier' ? 'o.driver_id = $1' : me.role === 'admin' ? '$1::bigint IS NOT NULL' : 'o.user_id = $1';
     const arg = me.role === 'merchant' ? me.merchant_id : me.id;
-    const { rows } = await db.query(`SELECT * FROM orders WHERE ${where} ORDER BY created_at DESC LIMIT 100`, [arg]);
+    const { rows } = await db.query(
+      `SELECT o.*, m.name AS merchant_name, r.from_name, r.to_name, r.tariff_id
+       FROM orders o LEFT JOIN merchants m ON m.id = o.merchant_id LEFT JOIN rides r ON r.order_id = o.id
+       WHERE ${where} ORDER BY o.created_at DESC LIMIT 100`,
+      [arg],
+    );
     return rows;
   });
 

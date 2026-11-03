@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { StoreProvider, useStore } from './src/state/store';
 import { Nav, Route } from './src/nav';
-import { C } from './src/components/ui';
+import { C, ErrorView, Loading } from './src/components/ui';
+import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import FoodScreen from './src/screens/FoodScreen';
 import RestaurantScreen from './src/screens/RestaurantScreen';
@@ -14,7 +15,7 @@ import OrdersScreen from './src/screens/OrdersScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 
 function Root() {
-  const { t } = useStore();
+  const { t, booting, bootError, retryBoot, user, errText } = useStore();
   const [stack, setStack] = useState<Route[]>([{ name: 'tabs', tab: 'home' }]);
   const nav: Nav = useMemo(
     () => ({
@@ -25,6 +26,14 @@ function Root() {
     [],
   );
   const route = stack[stack.length - 1];
+  // Баъд аз баромадан/воридшавӣ — аз экрани асосӣ оғоз
+  useEffect(() => {
+    if (!user) setStack([{ name: 'tabs', tab: 'home' }]);
+  }, [user]);
+
+  if (booting) return <View style={styles.root}><Loading /></View>;
+  if (bootError) return <View style={styles.root}><ErrorView text={errText(bootError)} retryLabel={t('retry')} onRetry={() => void retryBoot()} /></View>;
+  if (!user) return <View style={styles.root}><StatusBar style="dark" /><LoginScreen /></View>;
 
   let screen: React.ReactNode;
   switch (route.name) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 export const C = {
   bg: '#F5F6F8',
@@ -115,3 +115,33 @@ export const s = StyleSheet.create({
   pad: { padding: 16, gap: 12 },
   emoji: { fontSize: 30 },
 });
+
+export function Loading({ text }: { text?: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10 }}>
+      <ActivityIndicator color={C.primary} size="large" />
+      {text ? <Text style={s.muted}>{text}</Text> : null}
+    </View>
+  );
+}
+
+export function ErrorView({ text, retryLabel, onRetry }: { text: string; retryLabel: string; onRetry: () => void }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 }}>
+      <Text style={{ fontSize: 40 }}>⚠️</Text>
+      <Text style={[s.muted, { textAlign: 'center', fontSize: 15 }]}>{text}</Text>
+      <View style={{ width: 180 }}>
+        <Button title={retryLabel} onPress={onRetry} variant="ghost" />
+      </View>
+    </View>
+  );
+}
+
+export function ErrorBanner({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <View style={{ backgroundColor: '#FDECEA', borderRadius: 10, padding: 10 }}>
+      <Text style={{ color: C.accent, fontSize: 14 }}>{text}</Text>
+    </View>
+  );
+}

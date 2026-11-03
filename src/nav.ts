@@ -5,7 +5,7 @@
 export type Route =
   | { name: 'tabs'; tab: 'home' | 'orders' | 'profile' }
   | { name: 'food' }
-  | { name: 'restaurant'; id: string }
+  | { name: 'restaurant'; id: number }
   | { name: 'market' }
   | { name: 'cart' }
   | { name: 'taxi' };

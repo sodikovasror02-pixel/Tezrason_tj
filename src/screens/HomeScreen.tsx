@@ -1,12 +1,13 @@
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Nav } from '../nav';
-import { cartCount, useStore } from '../state/store';
-import { C, Card, s } from '../components/ui';
-import { restaurants } from '../data/mock';
+import { cartCount, useApi, useStore } from '../state/store';
+import type { Merchant } from '../api/types';
+import { C, Card, ErrorBanner, s } from '../components/ui';
 
 export default function HomeScreen({ nav }: { nav: Nav }) {
-  const { t, l, cart } = useStore();
+  const { t, tr, cart, errText, wsConnected } = useStore();
+  const { data, error, loading, reload } = useApi<Merchant[]>('/merchants?kind=restaurant');
   const services = [
     { key: 'food', emoji: '🍔', title: t('food'), sub: t('foodSub'), color: '#FFF4E5', go: () => nav.push({ name: 'food' }) },
     { key: 'taxi', emoji: '🚕', title: t('taxi'), sub: t('taxiSub'), color: '#FFF9DB', go: () => nav.push({ name: 'taxi' }) },
@@ -14,20 +15,23 @@ export default function HomeScreen({ nav }: { nav: Nav }) {
   ];
 
   return (
-    <ScrollView style={s.screen} contentContainerStyle={s.pad}>
+    <ScrollView style={s.screen} contentContainerStyle={s.pad} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} />}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View>
           <Text style={{ fontSize: 26, fontWeight: '800', color: C.primary }}>{t('appName')}</Text>
           <Text style={s.muted}>📍 {t('addressDefault')}</Text>
         </View>
-        <Pressable onPress={() => nav.push({ name: 'cart' })} style={{ padding: 8 }}>
-          <Text style={{ fontSize: 24 }}>🧺</Text>
-          {cartCount(cart) > 0 && (
-            <View style={{ position: 'absolute', right: 0, top: 0, backgroundColor: C.accent, borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{cartCount(cart)}</Text>
-            </View>
-          )}
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: wsConnected ? C.primary : C.line }} accessibilityLabel={wsConnected ? t('live') : t('offline')} />
+          <Pressable onPress={() => nav.push({ name: 'cart' })} style={{ padding: 8 }}>
+            <Text style={{ fontSize: 24 }}>🧺</Text>
+            {cartCount(cart) > 0 && (
+              <View style={{ position: 'absolute', right: 0, top: 0, backgroundColor: C.accent, borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{cartCount(cart)}</Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
       </View>
 
       <Text style={[s.h2, { marginTop: 8 }]}>{t('greeting')}</Text>
@@ -45,13 +49,15 @@ export default function HomeScreen({ nav }: { nav: Nav }) {
       </View>
 
       <Text style={[s.h2, { marginTop: 8 }]}>{t('food')} 🔥</Text>
-      {restaurants.map((r) => (
+      <ErrorBanner text={error ? errText(error) : null} />
+      {data?.map((r) => (
         <Card key={r.id} onPress={() => nav.push({ name: 'restaurant', id: r.id })} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Text style={s.emoji}>{r.emoji}</Text>
           <View style={{ flex: 1 }}>
             <Text style={s.title}>{r.name}</Text>
             <Text style={s.muted}>
-              {l(r.cuisine)} · ⭐ {r.rating} · {r.etaMin} {t('min')}
+              {tr(r, 'cuisine')} · ⭐ {r.rating} · {r.prep_min} {t('min')}
+              {!r.is_open ? ` · ${t('closed')}` : ''}
             </Text>
           </View>
         </Card>

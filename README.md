@@ -4,18 +4,23 @@ Expo SDK 58 · React Native 0.88 · TypeScript. Интерфейс: тоҷикӣ
 
 ## Оғоз
 ```bash
-npm install
-npx expo start        # QR-кодро бо Expo Go (Android/iOS) скан кунед
-npx expo start --web  # дар браузер
+# 1) сервер (ниг. server/README.md)
+cd server && docker compose up -d db redis && npm install && npm run dev
+# 2) барнома
+cd .. && npm install && npx expo start   # QR-кодро бо Expo Go скан кунед
 ```
+Суроғаи API худкор муайян мешавад (IP-и компютере, ки Metro дар он кор мекунад, порти 3000).
+Барои production: `EXPO_PUBLIC_API_URL=https://api.example.tj`.
+Телефон ва компютер бояд дар як шабакаи Wi‑Fi бошанд.
 
 ## Сохтор
 ```
 App.tsx                  навигатсия (stack + tab bar)
 src/i18n/strings.ts      луғати tj / ru
-src/data/mock.ts         тарабхонаҳо, маҳсулот, ҷойҳо, тарифҳо (TJS)
-src/data/pricing.ts      haversine, нархи такси, нархи расонидан
-src/state/store.tsx      сабад, фармоишҳо, забон (React Context)
+src/api/                 client (fetch + JWT), types, tokenStorage (SecureStore)
+src/data/mock.ts         ҷойҳои маъмул барои такси (то харита)
+src/state/store.tsx      сессия, сабад, фармоишҳо, WebSocket
+server/                  API (Fastify + PostgreSQL + Redis)
 src/screens/*            Home, Food, Restaurant, Market, Cart, Taxi, Orders, Profile
 ```
 

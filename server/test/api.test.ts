@@ -170,6 +170,8 @@ describe('хӯрок: фармоиш → тарабхона → курьер', (
     expect(full.status).toBe('delivered');
     expect(full.items).toHaveLength(2);
     expect(full.events.map((e: any) => e.status)).toEqual(['created', 'accepted', 'ready', 'picked_up', 'delivered']);
+    const list = (await call('GET', '/orders', customer.token)).body;
+    expect(list[0]).toMatchObject({ id: o.id, merchant_name: 'Ошхонаи Роҳат', status: 'delivered' });
     custWs.ws.close();
     merchWs.ws.close();
   });
