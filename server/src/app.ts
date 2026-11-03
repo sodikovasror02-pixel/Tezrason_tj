@@ -90,6 +90,9 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}): Pro
     return reply.code(500).send({ error: 'internal' });
   });
 
+  // Саҳифаи асосӣ — то кушодани суроға дар браузер «404» набошад
+  app.get('/', async () => ({ name: 'Тезрасон API', ok: true, health: '/health' }));
+
   app.get('/health', async () => {
     await deps.db.query('SELECT 1');
     await deps.redis.ping();
