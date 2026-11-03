@@ -167,6 +167,7 @@ const tj = {
   err_payment_unavailable: 'Пардохт бо корт ҳоло дастрас нест',
   err_forbidden: 'Дастрасӣ нест',
   err_validation: 'Маълумот нодуруст ворид шудааст',
+  err_sms_unavailable: 'Воридшавӣ ҳоло танҳо барои тестерҳо кушода аст',
   err_unknown: 'Хатогӣ рух дод. Боз кӯшиш кунед',
 };
 
@@ -331,6 +332,7 @@ const ru: typeof tj = {
   err_payment_unavailable: 'Оплата картой сейчас недоступна',
   err_forbidden: 'Нет доступа',
   err_validation: 'Данные введены неверно',
+  err_sms_unavailable: 'Вход сейчас открыт только для тестировщиков',
   err_unknown: 'Произошла ошибка. Попробуйте ещё раз',
 };
 

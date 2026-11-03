@@ -18,6 +18,11 @@ export type Config = {
   /** Суроғаи берунии сервер (барои пайвандҳои пардохт) */
   publicUrl: string;
   paymentWebhookSecret: string;
+  /**
+   * Рақамҳои тестӣ: рамз дар ҷавоб бармегардад (ҳатто дар production).
+   * Бе провайдери воқеии SMS дар production танҳо ҳамин рақамҳо ворид шуда метавонанд.
+   */
+  otpTestPhones: string[];
 };
 
 export function loadConfig(env = process.env): Config {
@@ -37,6 +42,7 @@ export function loadConfig(env = process.env): Config {
     trafficFactor: Number(env.TRAFFIC_FACTOR ?? 1.3),
     publicUrl: (env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 3000}`).replace(/\/$/, ''),
     paymentWebhookSecret: env.PAYMENT_WEBHOOK_SECRET ?? (isProd ? '' : 'dev-webhook-secret'),
+    otpTestPhones: (env.OTP_TEST_PHONES ?? '').split(',').map((s: string) => s.trim()).filter(Boolean),
   };
 }
 

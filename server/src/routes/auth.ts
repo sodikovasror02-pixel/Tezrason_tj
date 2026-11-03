@@ -16,6 +16,9 @@ export async function authRoutes(app: App) {
   /** 1) Дархости рамз ба SMS */
   app.post('/auth/otp/request', async (req) => {
     const { phone } = z.object({ phone: Phone }).parse(req.body);
+    const isTestPhone = cfg.otpTestPhones.includes(phone);
+    // Production бе SMS-и воқеӣ: танҳо рақамҳои тестӣ (вагарна рамз ба ҳеҷ ҷо намерасад)
+    if (cfg.isProd && !sms.real && !isTestPhone) throw new HttpError(503, 'sms_unavailable');
     // Ҳимоя аз спам: як SMS дар 60 с ба як рақам (Redis SET NX EX)
     const ok = await redis.set(`otp:throttle:${phone}`, '1', 'EX', OTP_RESEND_S, 'NX');
     if (!ok) throw new HttpError(429, 'otp_throttled', `Баъд аз ${OTP_RESEND_S} с такрор кунед`);
@@ -28,8 +31,8 @@ export async function authRoutes(app: App) {
       [phone, hash(code, phone), OTP_TTL_S],
     );
     await sms.send(phone, `Тезрасон: рамзи шумо ${code}`);
-    // Дар development рамз дар ҷавоб бармегардад — барои санҷиш
-    return { ok: true, ttl: OTP_TTL_S, ...(cfg.isProd ? {} : { devCode: code }) };
+    // Дар development ва барои рақамҳои тестӣ рамз дар ҷавоб бармегардад
+    return { ok: true, ttl: OTP_TTL_S, ...(!cfg.isProd || isTestPhone ? { devCode: code } : {}) };
   });
 
   /** 2) Тасдиқи рамз → JWT */

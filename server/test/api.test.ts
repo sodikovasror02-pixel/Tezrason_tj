@@ -378,6 +378,20 @@ describe('пардохт бо корт', () => {
   });
 });
 
+describe('production: рақамҳои тестӣ', () => {
+  it('бе SMS-и воқеӣ танҳо рақамҳои рӯйхат; рамз танҳо ба онҳо', async () => {
+    const prod = await buildApp({ ...app.deps, cfg: { ...app.deps.cfg, isProd: true, otpTestPhones: ['+992955555555'] } });
+    const req = (phone: string) => prod.inject({ method: 'POST', url: '/auth/otp/request', payload: { phone } });
+    const ok = await req('+992955555555');
+    expect(ok.statusCode).toBe(200);
+    expect(JSON.parse(ok.body).devCode).toMatch(/^\d{6}$/);
+    const other = await req('+992955555556');
+    expect(other.statusCode).toBe(503);
+    expect(JSON.parse(other.body).error).toBe('sms_unavailable');
+    await prod.close();
+  });
+});
+
 describe('CORS', () => {
   it('preflight барои PATCH ва DELETE (панели веб)', async () => {
     for (const m of ['PATCH', 'DELETE']) {

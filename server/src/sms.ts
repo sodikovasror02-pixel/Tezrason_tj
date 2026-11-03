@@ -3,10 +3,13 @@
  * (масалан, Tcell / Megafon / Babilon SMS-шлюз) ё агрегатор.
  */
 export interface SmsSender {
+  /** false — SMS воқеан фиристода намешавад (консол) */
+  readonly real: boolean;
   send(phone: string, text: string): Promise<void>;
 }
 
 export class ConsoleSms implements SmsSender {
+  readonly real = false;
   sent: { phone: string; text: string }[] = [];
   async send(phone: string, text: string) {
     this.sent.push({ phone, text });
