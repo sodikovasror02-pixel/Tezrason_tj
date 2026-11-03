@@ -10,11 +10,12 @@ import FoodScreen from './src/screens/FoodScreen';
 import RestaurantScreen from './src/screens/RestaurantScreen';
 import MarketScreen from './src/screens/MarketScreen';
 import CartScreen from './src/screens/CartScreen';
-import TaxiScreen from './src/screens/TaxiScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import OrderScreen from './src/screens/OrderScreen';
-import DriverApp from './src/driver/DriverApp';
+import CourierApp from './src/courier/CourierApp';
+import MerchantApp from './src/merchant/MerchantApp';
+import AddressesScreen, { AddressNewScreen } from './src/screens/AddressesScreen';
 
 function Root() {
   const { t, booting, bootError, retryBoot, user, errText } = useStore();
@@ -36,7 +37,8 @@ function Root() {
   if (booting) return <View style={styles.root}><Loading /></View>;
   if (bootError) return <View style={styles.root}><ErrorView text={errText(bootError)} retryLabel={t('retry')} onRetry={() => void retryBoot()} /></View>;
   if (!user) return <View style={styles.root}><StatusBar style="dark" /><LoginScreen /></View>;
-  if (user.role === 'driver' || user.role === 'courier') return <View style={styles.root}><StatusBar style="dark" /><DriverApp /></View>;
+  if (user.role === 'courier') return <View style={styles.root}><StatusBar style="dark" /><CourierApp /></View>;
+  if (user.role === 'merchant') return <View style={styles.root}><StatusBar style="dark" /><MerchantApp /></View>;
 
   let screen: React.ReactNode;
   switch (route.name) {
@@ -44,7 +46,8 @@ function Root() {
     case 'restaurant': screen = <RestaurantScreen nav={nav} id={route.id} />; break;
     case 'market': screen = <MarketScreen nav={nav} />; break;
     case 'cart': screen = <CartScreen nav={nav} />; break;
-    case 'taxi': screen = <TaxiScreen nav={nav} />; break;
+    case 'addresses': screen = <AddressesScreen nav={nav} />; break;
+    case 'addressNew': screen = <AddressNewScreen nav={nav} />; break;
     case 'order': screen = <OrderScreen nav={nav} id={route.id} />; break;
     case 'tabs':
       screen = route.tab === 'home' ? <HomeScreen nav={nav} /> : route.tab === 'orders' ? <OrdersScreen nav={nav} /> : <ProfileScreen />;

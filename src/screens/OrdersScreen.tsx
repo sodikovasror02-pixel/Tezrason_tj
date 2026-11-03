@@ -8,7 +8,7 @@ import { fmt } from '../data/pricing';
 import type { Nav } from '../nav';
 import type { StringKey } from '../i18n/strings';
 
-const KIND_EMOJI = { food: '🍔', market: '🛒', taxi: '🚕' } as const;
+const KIND_EMOJI = { food: '🍔', market: '🛒' } as const;
 const FINAL = ['delivered', 'completed', 'cancelled'];
 
 export default function OrdersScreen({ nav }: { nav: Nav }) {
@@ -39,11 +39,11 @@ export default function OrdersScreen({ nav }: { nav: Nav }) {
       <ErrorBanner text={error} />
       {!orders.length && !ordersLoading && <Text style={s.muted}>{t('noOrders')}</Text>}
       {orders.map((o) => {
-        const flow = STATUS_FLOW[o.kind];
+        const flow = STATUS_FLOW;
         const step = flow.indexOf(o.status);
         const done = FINAL.includes(o.status);
         const cancelled = o.status === 'cancelled';
-        const title = o.kind === 'taxi' ? `${o.from_name ?? '?'} → ${o.to_name ?? '?'}` : o.merchant_name ?? '';
+        const title = o.merchant_name;
         return (
           <Card key={o.id} style={{ gap: 10 }} onPress={() => nav.push({ name: 'order', id: o.id })}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -63,7 +63,7 @@ export default function OrdersScreen({ nav }: { nav: Nav }) {
               {cancelled ? '✖ ' : done ? '✅ ' : '⏳ '}
               {t(`status_${o.status}` as StringKey)}
             </Text>
-            {o.status === 'searching' && <Text style={s.muted}>{t('noDrivers')}</Text>}
+            {o.status === 'awaiting_payment' && <Text style={s.muted}>💳 {t('waitingPayment')}</Text>}
             {CUSTOMER_CANCELLABLE.includes(o.status) && <Button title={t('cancel')} variant="ghost" onPress={() => cancel(o)} />}
           </Card>
         );

@@ -1,4 +1,6 @@
 import { registerRootComponent } from 'expo';
+// Вазифаи GPS-и пасзамина бояд пеш аз render эълон шавад
+import './src/courier/backgroundLocation';
 
 import App from './App';
 

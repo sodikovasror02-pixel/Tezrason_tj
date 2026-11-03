@@ -44,7 +44,8 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}): Pro
   app.decorate('deps', deps);
   app.decorateRequest('me', null as unknown as Me);
 
-  await app.register(cors, { origin: true });
+  // Методҳо ба таври возеҳ: пешфарзи @fastify/cors PATCH/DELETE-ро дар preflight иҷозат намедиҳад
+  await app.register(cors, { origin: true, methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] });
 
   // JSON бо нигоҳ доштани бадани хом (HMAC-и webhook); бадани холӣ → {}
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {

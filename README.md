@@ -1,44 +1,51 @@
-# Хизмат — супер-барнома (Хӯрок + Такси + Маркет), Душанбе
+# Тезрасон — расонидани хӯрок ва маҳсулот (Душанбе)
 
-Expo SDK 58 · React Native 0.88 · TypeScript. Интерфейс: тоҷикӣ / русӣ.
+Expo SDK 58 · React Native · TypeScript. Интерфейс: тоҷикӣ / русӣ.
+Сервер: [`server/`](server/README.md) — Fastify 5 · PostgreSQL 16 · Redis · WebSocket.
 
-## Оғоз
+Як барнома, се нақш (аз рӯи `user.role` баъди воридшавӣ):
+
+| Нақш | Имкониятҳо |
+|---|---|
+| Мизоҷ | Тарабхонаҳо ва маркет, сабад, суроғаҳои нигоҳдошташуда (даромадгоҳ/ошёна/хона/шарҳ), нақд ё корт, ETA, курьер дар харита, занг ба курьер |
+| Курьер | Смена (онлайн/офлайн), GPS дар пасзамина, пешниҳоди худкор бо ҳисоби баръакси 30 с, навигатсия, «Гирифтам» → «Расонидам», даромади имрӯз |
+| Тарабхона | Фармоишҳои нав (бо ларзиш), «Қабул» → «Омода шуд», меню: нарх ва «ҳаст/тамом», кушода/пӯшида, вақти омодасозӣ |
+
+## Оғоз (development)
 ```bash
-# 1) сервер (ниг. server/README.md)
 cd server && docker compose up -d db redis && npm install && npm run dev
-# 2) барнома
-cd .. && npm install && npx expo start   # QR-кодро бо Expo Go скан кунед
+```
+```bash
+npm install && npx expo start   # QR-кодро бо Expo Go скан кунед
 ```
 Суроғаи API худкор муайян мешавад (IP-и компютере, ки Metro дар он кор мекунад, порти 3000).
-Барои production: `EXPO_PUBLIC_API_URL=https://api.example.tj`.
-Телефон ва компютер бояд дар як шабакаи Wi‑Fi бошанд.
+Телефон ва компютер бояд дар як шабакаи Wi‑Fi бошанд. Нақшҳо: `PATCH /admin/users/:id` (админ аз `ADMIN_PHONES`).
+
+## Сохтани APK (Android)
+GPS-и пасзамина ва Google Maps дар Expo Go кор намекунанд — сохтани EAS лозим аст:
+```bash
+npx eas-cli@latest login
+```
+```bash
+npx eas-cli@latest init
+```
+```bash
+GOOGLE_MAPS_API_KEY=... npx eas-cli@latest build -p android --profile preview
+```
+- `preview` → `.apk` барои насби мустақим; `production` → `.aab` барои Google Play.
+- Суроғаи сервер дар `eas.json` → `EXPO_PUBLIC_API_URL` (ҳоло `https://api.tezrason.tj` — иваз кунед).
+- Калиди Google Maps: Google Cloud Console → Maps SDK for Android (бо маҳдудияти `tj.tezrason.app` + SHA‑1).
+- Барои Google Play иҷозати `ACCESS_BACKGROUND_LOCATION` эъломия ва видеои кӯтоҳ талаб мекунад.
 
 ## Сохтор
 ```
-App.tsx                  навигатсия (stack + tab bar)
-src/i18n/strings.ts      луғати tj / ru
-src/api/                 client (fetch + JWT), types, tokenStorage (SecureStore)
-src/data/mock.ts         ҷойҳои маъмул барои такси (то харита)
-src/state/store.tsx      сессия, сабад, фармоишҳо, WebSocket
-server/                  API (Fastify + PostgreSQL + Redis)
-src/screens/*            Home, Food, Restaurant, Market, Cart, Taxi, Orders, Profile
+App.tsx                      навигатсия; интихоби интерфейс аз рӯи нақш
+index.ts                     эълони вазифаи GPS-и пасзамина (пеш аз render)
+src/api/                     client (fetch + JWT), types, tokenStorage (SecureStore)
+src/state/store.tsx          сессия, сабад, суроға, фармоишҳо, WebSocket
+src/screens/                 экранҳои мизоҷ (+ AddressesScreen)
+src/courier/                 CourierApp, useCourierShift, backgroundLocation
+src/merchant/MerchantApp.tsx панели тарабхона
+src/components/RouteMap*.tsx харита (native) / нақшаи схематикӣ (web)
+app.config.js, eas.json      ном, package, иҷозатҳо, профилҳои сохтан
 ```
-
-## Формулаҳо
-- Масофа: haversine, R = 6371 км; d_роҳ = 1.3·d₀
-- Вақт: t = d / 25 км/соат
-- Такси: C = max(C_min, (C₀ + c_km·d + c_min·t)·k_surge), k_surge = 1.3 (07–09, 17–19)
-- Расонидан: C = max(7, 5 + 1.5·d) TJS; хизматрасонӣ 5%
-
-## Қадамҳои навбатӣ (production)
-1. Backend: NestJS/FastAPI + PostgreSQL/PostGIS, Redis, WebSocket (ҳолати фармоиш, ҷойгиршавии ронанда)
-2. Харита: react-native-maps + OSRM (масофаи воқеии роҳ)
-3. Аутентификатсия: SMS-OTP (+992)
-4. Пардохт: Корти Миллӣ / DC Wallet / Alif (API-и бонк)
-5. Барномаҳои алоҳида: курьер/ронанда, панели тарабхона, админ
-6. Сохтан: `npx eas-cli@latest build -p android`
-
-## Харита
-- iOS: Apple Maps; Android: Google Maps. Дар Expo Go калид лозим нест.
-- Барои APK/AAB: `GOOGLE_MAPS_API_KEY=... npx eas-cli@latest build -p android` (ниг. `app.config.js`).
-- Дар веб — нақшаи схематикӣ (`RouteMap.web.tsx`), танҳо барои санҷиш.

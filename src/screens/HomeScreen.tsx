@@ -6,11 +6,10 @@ import type { Merchant } from '../api/types';
 import { C, Card, ErrorBanner, s } from '../components/ui';
 
 export default function HomeScreen({ nav }: { nav: Nav }) {
-  const { t, tr, cart, errText, wsConnected } = useStore();
+  const { t, tr, cart, errText, wsConnected, deliveryAddress } = useStore();
   const { data, error, loading, reload } = useApi<Merchant[]>('/merchants?kind=restaurant');
   const services = [
     { key: 'food', emoji: '🍔', title: t('food'), sub: t('foodSub'), color: '#FFF4E5', go: () => nav.push({ name: 'food' }) },
-    { key: 'taxi', emoji: '🚕', title: t('taxi'), sub: t('taxiSub'), color: '#FFF9DB', go: () => nav.push({ name: 'taxi' }) },
     { key: 'market', emoji: '🛒', title: t('market'), sub: t('marketSub'), color: '#E8F7EE', go: () => nav.push({ name: 'market' }) },
   ];
 
@@ -19,7 +18,11 @@ export default function HomeScreen({ nav }: { nav: Nav }) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View>
           <Text style={{ fontSize: 26, fontWeight: '800', color: C.primary }}>{t('appName')}</Text>
-          <Text style={s.muted}>📍 {t('addressDefault')}</Text>
+          <Pressable onPress={() => nav.push({ name: 'addresses' })} accessibilityRole="button">
+            <Text style={[s.muted, { color: deliveryAddress ? C.text : C.primary }]} numberOfLines={1}>
+              📍 {deliveryAddress ? deliveryAddress.label ?? deliveryAddress.text : t('chooseAddress')} ›
+            </Text>
+          </Pressable>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: wsConnected ? C.primary : C.line }} accessibilityLabel={wsConnected ? t('live') : t('offline')} />

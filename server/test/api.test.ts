@@ -378,6 +378,16 @@ describe('пардохт бо корт', () => {
   });
 });
 
+describe('CORS', () => {
+  it('preflight барои PATCH ва DELETE (панели веб)', async () => {
+    for (const m of ['PATCH', 'DELETE']) {
+      const r = await app.inject({ method: 'OPTIONS', url: '/merchant/products/1', headers: { origin: 'http://localhost:8081', 'access-control-request-method': m } });
+      expect(r.statusCode).toBe(204);
+      expect(String(r.headers['access-control-allow-methods'])).toContain(m);
+    }
+  });
+});
+
 describe('ҳуқуқҳо', () => {
   it('бегона намебинад; мизоҷ «accepted» карда наметавонад', async () => {
     const a = await login();

@@ -5,7 +5,7 @@ import { API_URL } from '../api/client';
 import { Button, Card, Chip, Row, s } from '../components/ui';
 
 export default function ProfileScreen() {
-  const { t, lang, setLang, orders, user, signOut } = useStore();
+  const { t, lang, setLang, orders, user, signOut, deliveryAddress } = useStore();
   return (
     <ScrollView style={s.screen} contentContainerStyle={s.pad}>
       <Text style={[s.h2, { fontSize: 22 }]}>{t('profile')}</Text>
@@ -15,7 +15,7 @@ export default function ProfileScreen() {
         <Text style={s.muted}>{user?.phone}</Text>
       </Card>
       <Card>
-        <Row label={t('address')} value={t('addressDefault')} />
+        <Row label={t('address')} value={deliveryAddress?.label ?? '—'} />
         <Row label={t('orders')} value={String(orders.length)} />
         {__DEV__ ? <Row label="API" value={API_URL} /> : null}
       </Card>

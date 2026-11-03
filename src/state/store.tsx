@@ -2,20 +2,17 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Lang, strings, StringKey } from '../i18n/strings';
 import { api, ApiError, setToken, setUnauthorizedHandler, WS_URL } from '../api/client';
 import { loadToken, saveToken } from '../api/tokenStorage';
-import type { Order, OrderKind, OrderStatus, User, WsMessage } from '../api/types';
+import type { Address, Order, OrderStatus, User, WsMessage } from '../api/types';
 
 export type CartLine = { productId: number; name_tj: string; name_ru: string; price: number; emoji: string; qty: number };
 /** Сабад танҳо аз як фурӯшанда (merchant) */
 export type Cart = { merchantId: number | null; merchantName: string; lines: CartLine[] };
 
 /** Қадамҳои асосӣ барои прогресс-бар (cancelled алоҳида) */
-export const STATUS_FLOW: Record<OrderKind, OrderStatus[]> = {
-  food: ['created', 'accepted', 'ready', 'picked_up', 'delivered'],
-  market: ['created', 'accepted', 'ready', 'picked_up', 'delivered'],
-  taxi: ['searching', 'driver_assigned', 'arrived', 'in_progress', 'completed'],
-};
+export const STATUS_FLOW: OrderStatus[] = ['created', 'accepted', 'ready', 'picked_up', 'delivered'];
 /** Ҳолатҳое, ки мизоҷ бекор карда метавонад (мувофиқи server/src/domain/status.ts) */
-export const CUSTOMER_CANCELLABLE: OrderStatus[] = ['created', 'searching', 'driver_assigned', 'arrived'];
+export const CUSTOMER_CANCELLABLE: OrderStatus[] = ['awaiting_payment', 'created'];
+export const FINAL_STATUSES: OrderStatus[] = ['delivered', 'cancelled'];
 
 type Store = {
   lang: Lang;
@@ -41,8 +38,11 @@ type Store = {
   ordersLoading: boolean;
   refreshOrders: () => Promise<void>;
   wsConnected: boolean;
-  /** Ҷойгиршавии охирини ронанда/курьер аз рӯи orderId (аз WebSocket) */
-  driverLocations: Record<number, { lat: number; lon: number }>;
+  /** Ҷойгиршавии охирини курьер аз рӯи orderId (аз WebSocket) */
+  courierLocations: Record<number, { lat: number; lon: number }>;
+  /** Суроғаи интихобшуда барои расонидан */
+  deliveryAddress: Address | null;
+  setDeliveryAddress: (a: Address | null) => void;
   /** Обуна ба ҳамаи паёмҳои WebSocket (масалан, ride.offer барои ронанда) */
   onWs: (fn: (m: WsMessage) => void) => () => void;
 };
@@ -58,7 +58,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
-  const [driverLocations, setDriverLocations] = useState<Record<number, { lat: number; lon: number }>>({});
+  const [courierLocations, setCourierLocations] = useState<Record<number, { lat: number; lon: number }>>({});
+  const [deliveryAddress, setDeliveryAddress] = useState<Address | null>(null);
   const tokenRef = useRef<string | null>(null);
   const wsListeners = useRef(new Set<(m: WsMessage) => void>());
   const onWs = useCallback((fn: (m: WsMessage) => void) => {
@@ -73,6 +74,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setOrders([]);
     setCart(emptyCart);
+    setDeliveryAddress(null);
   }, []);
 
   const [bootError, setBootError] = useState<unknown>(null);
@@ -134,12 +136,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ws.onmessage = (ev) => {
         const m = JSON.parse(String(ev.data)) as WsMessage;
         wsListeners.current.forEach((fn) => fn(m));
-        if (m.event === 'driver.location') {
-          const d = m.data as { orderId: number; lat: number; lon: number };
-          setDriverLocations((x) => ({ ...x, [d.orderId]: { lat: d.lat, lon: d.lon } }));
+        if (m.event === 'courier.location') {
+          const d = m.data;
+          setCourierLocations((x) => ({ ...x, [d.orderId]: { lat: d.lat, lon: d.lon } }));
         }
+        if (m.event === 'order.new') void refreshOrders().catch(() => {});
         if (m.event === 'order.status') {
-          const d = m.data as { orderId: number; status: OrderStatus };
+          const d = m.data;
+          // Курьер таъин шуд → маълумоти пурра лозим (courier_id, eta)
+          if (d.courierAssigned) void refreshOrders().catch(() => {});
           setOrders((os) => {
             if (!os.some((o) => o.id === d.orderId)) {
               void refreshOrders().catch(() => {});
@@ -206,10 +211,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ordersLoading,
       refreshOrders,
       wsConnected,
-      driverLocations,
+      courierLocations,
+      deliveryAddress,
+      setDeliveryAddress,
       onWs,
     };
-  }, [lang, booting, bootError, boot, user, signIn, signOut, cart, orders, ordersLoading, refreshOrders, wsConnected, driverLocations, onWs]);
+  }, [lang, booting, bootError, boot, user, signIn, signOut, cart, orders, ordersLoading, refreshOrders, wsConnected, courierLocations, deliveryAddress, onWs]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

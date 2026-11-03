@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Linking, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Nav } from '../nav';
 import { CUSTOMER_CANCELLABLE, STATUS_FLOW, useApi, useStore } from '../state/store';
 import { api } from '../api/client';
@@ -8,18 +8,22 @@ import { Button, C, Card, ErrorView, Header, Loading, Row, s } from '../componen
 import RouteMap from '../components/RouteMap';
 import { fmt } from '../data/pricing';
 import type { StringKey } from '../i18n/strings';
+import { addressDetails } from './AddressesScreen';
+import { openCheckout } from './CartScreen';
 
-/** Тафсилоти фармоиш: харита бо масир ва ронанда (такси), таркиб (хӯрок/маркет) */
+const hhmm = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
+
+/** Тафсилоти фармоиш: харита (тарабхона → мизоҷ + курьер), ETA, курьер, таркиб */
 export default function OrderScreen({ nav, id }: { nav: Nav; id: number }) {
-  const { t, tr, orders, driverLocations, errText } = useStore();
+  const { t, tr, orders, courierLocations, errText } = useStore();
   const { data: o, error, loading, reload } = useApi<OrderDetail>(`/orders/${id}`);
 
-  // Ҳолат аз WebSocket тағйир ёфт → тафсилотро нав мекунем (driver_id ва ғ.)
-  const liveStatus = orders.find((x) => x.id === id)?.status;
+  // Ҳолат ё курьер аз WebSocket тағйир ёфт → тафсилотро нав мекунем
+  const live = orders.find((x) => x.id === id);
   useEffect(() => {
-    if (o && liveStatus && liveStatus !== o.status) void reload();
+    if (o && live && (live.status !== o.status || live.courier_id !== o.courier_id)) void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveStatus]);
+  }, [live?.status, live?.courier_id]);
 
   if (!o)
     return (
@@ -29,11 +33,10 @@ export default function OrderScreen({ nav, id }: { nav: Nav; id: number }) {
       </View>
     );
 
-  const status = liveStatus ?? o.status;
-  const flow = STATUS_FLOW[o.kind];
-  const step = flow.indexOf(status);
-  const driver = driverLocations[id] ?? o.driverLocation;
-  const showDriver = ['driver_assigned', 'arrived', 'in_progress', 'picked_up'].includes(status);
+  const status = live?.status ?? o.status;
+  const step = STATUS_FLOW.indexOf(status);
+  const courier = courierLocations[id] ?? o.courierLocation;
+  const active = !['delivered', 'cancelled'].includes(status);
 
   const cancel = async () => {
     try {
@@ -47,47 +50,65 @@ export default function OrderScreen({ nav, id }: { nav: Nav; id: number }) {
     <View style={s.screen}>
       <Header title={`${t('order')} #${id}`} onBack={nav.back} />
       <ScrollView contentContainerStyle={s.pad} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} />}>
-        {o.ride && (
-          <RouteMap
-            from={{ lat: o.ride.from_lat, lon: o.ride.from_lon }}
-            to={{ lat: o.ride.to_lat, lon: o.ride.to_lon }}
-            route={o.ride.geometry}
-            driver={showDriver ? driver : null}
-            driverIcon={o.kind === 'taxi' ? '🚕' : '🛵'}
-            height={300}
-          />
-        )}
+        <RouteMap
+          from={{ lat: o.merchant_lat, lon: o.merchant_lon }}
+          to={{ lat: o.lat, lon: o.lon }}
+          driver={active && o.courier_id ? courier : null}
+          driverIcon="🛵"
+          height={240}
+        />
 
         <Card style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 4 }}>
-            {flow.map((_, i) => (
-              <View key={i} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: status !== 'cancelled' && i <= step ? C.primary : C.line }} />
-            ))}
-          </View>
-          <Text style={[s.title, { color: status === 'cancelled' ? C.accent : C.text }]}>{t(`status_${status}` as StringKey)}</Text>
-          {showDriver && driver && o.kind === 'taxi' && <Text style={s.muted}>🚕 {t('driverOnMap')}</Text>}
+          {status !== 'awaiting_payment' && status !== 'cancelled' && (
+            <View style={{ flexDirection: 'row', gap: 4 }}>
+              {STATUS_FLOW.map((_, i) => (
+                <View key={i} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: i <= step ? C.primary : C.line }} />
+              ))}
+            </View>
+          )}
+          <Text style={[s.title, { fontSize: 17, color: status === 'cancelled' ? C.accent : C.text }]}>{t(`status_${status}` as StringKey)}</Text>
+          {active && o.eta_at && status !== 'awaiting_payment' && (
+            <Text style={{ color: C.primary, fontWeight: '700' }}>⏱ {t('etaAt')} {hhmm(o.eta_at)}</Text>
+          )}
+          {o.payment_status === 'refunded' && <Text style={s.muted}>💳 {t('refunded')}</Text>}
         </Card>
 
-        {o.ride ? (
-          <Card>
-            <Row label={`🟢 ${t('from')}`} value={o.ride.from_name ?? '—'} />
-            <Row label={`🔴 ${t('to')}`} value={o.ride.to_name ?? '—'} />
-            <Row label={t('distance')} value={`${Number(o.ride.route_km).toFixed(2)} ${t('km')}`} />
-            <Row label={t('duration')} value={`${Number(o.ride.minutes).toFixed(0)} ${t('min')}`} />
-            <Row label={t('total')} value={fmt(o.total)} bold />
-          </Card>
-        ) : (
-          <Card>
-            <Text style={[s.title, { marginBottom: 6 }]}>{o.merchant_name ?? t('items')}</Text>
-            {o.items.map((x) => (
-              <Row key={x.product_id} label={`${tr(x, 'name')} × ${x.qty}`} value={fmt(x.price * x.qty)} />
-            ))}
-            <View style={{ height: 1, backgroundColor: C.line, marginVertical: 6 }} />
-            <Row label={t('delivery')} value={fmt(o.delivery_fee)} />
-            <Row label={t('serviceFee')} value={fmt(o.service_fee)} />
-            <Row label={t('total')} value={fmt(o.total)} bold />
+        {status === 'awaiting_payment' && o.checkoutUrl && (
+          <Button title={`💳 ${t('payNow')} · ${fmt(o.total)}`} onPress={() => void openCheckout(o.checkoutUrl!)} />
+        )}
+
+        {o.courier_id && active && (
+          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ fontSize: 28 }}>🛵</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.title}>{o.courier_name ?? t('courier')}</Text>
+              <Text style={s.muted}>{courier ? t('courierOnMap') : t('courierAssigned')}</Text>
+            </View>
+            {o.courier_phone && (
+              <Text onPress={() => void Linking.openURL(`tel:${o.courier_phone}`)} style={{ color: C.primary, fontWeight: '700', padding: 8 }} accessibilityRole="button">
+                📞 {t('call')}
+              </Text>
+            )}
           </Card>
         )}
+
+        <Card>
+          <Text style={[s.title, { marginBottom: 6 }]}>{o.merchant_name}</Text>
+          {o.items.map((x) => (
+            <Row key={x.product_id} label={`${tr(x, 'name')} × ${x.qty}`} value={fmt(x.price * x.qty)} />
+          ))}
+          <View style={{ height: 1, backgroundColor: C.line, marginVertical: 6 }} />
+          <Row label={t('delivery')} value={fmt(o.delivery_fee)} />
+          <Row label={t('serviceFee')} value={fmt(o.service_fee)} />
+          <Row label={`${t('total')} (${o.payment === 'card' ? t('card') : t('cash')})`} value={fmt(o.total)} bold />
+        </Card>
+
+        <Card style={{ gap: 2 }}>
+          <Text style={s.muted}>{t('address')}</Text>
+          <Text style={{ color: C.text }}>{o.address}</Text>
+          {addressDetails(o, t) ? <Text style={s.muted}>{addressDetails(o, t)}</Text> : null}
+          {o.comment ? <Text style={s.muted}>💬 {o.comment}</Text> : null}
+        </Card>
 
         {CUSTOMER_CANCELLABLE.includes(status) && <Button title={t('cancel')} variant="ghost" onPress={cancel} />}
       </ScrollView>

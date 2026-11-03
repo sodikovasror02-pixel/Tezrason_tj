@@ -32,7 +32,7 @@ export const setUnauthorizedHandler = (fn: () => void) => (onUnauthorized = fn);
 
 const TIMEOUT_MS = 15000;
 
-export async function api<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let res: Response;
