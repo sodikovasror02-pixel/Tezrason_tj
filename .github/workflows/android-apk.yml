@@ -6,11 +6,9 @@
 # Натиҷа: expo.dev → Project → Builds → пайванди .apk (QR-код барои насб).
 name: Android APK (EAS)
 
+# Танҳо дастӣ (Actions → Run workflow). Роҳи асосӣ: expo.dev → «Build from GitHub» (бе EXPO_TOKEN).
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore: ['server/**', 'docs/**', '**/*.md']
 
 concurrency:
   group: eas-android
