@@ -8,7 +8,7 @@ export async function catalogRoutes(app: App) {
   app.get('/merchants', async (req) => {
     const { kind } = z.object({ kind: z.enum(['restaurant', 'market']).optional() }).parse(req.query);
     const { rows } = await db.query(
-      `SELECT id, kind, name, cuisine_tj, cuisine_ru, emoji, lat, lon, rating::float AS rating, prep_min, is_open
+      `SELECT id, kind, name, cuisine_tj, cuisine_ru, emoji, lat, lon, rating::float AS rating, prep_min, is_open, delivery_radius_km::float AS delivery_radius_km, min_order
        FROM merchants WHERE ($1::text IS NULL OR kind = $1) ORDER BY rating DESC, id`,
       [kind ?? null],
     );
@@ -18,7 +18,7 @@ export async function catalogRoutes(app: App) {
   app.get('/merchants/:id', async (req) => {
     const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
     const m = await db.query(
-      `SELECT id, kind, name, cuisine_tj, cuisine_ru, emoji, lat, lon, rating::float AS rating, prep_min, is_open
+      `SELECT id, kind, name, cuisine_tj, cuisine_ru, emoji, lat, lon, rating::float AS rating, prep_min, is_open, delivery_radius_km::float AS delivery_radius_km, min_order
        FROM merchants WHERE id = $1`,
       [id],
     );
@@ -31,5 +31,4 @@ export async function catalogRoutes(app: App) {
     return { ...m.rows[0], products: p.rows };
   });
 
-  app.get('/tariffs', async () => (await db.query('SELECT * FROM tariffs ORDER BY base')).rows);
 }

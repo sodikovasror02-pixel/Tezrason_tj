@@ -27,7 +27,7 @@ export async function authRoutes(app: App) {
        ON CONFLICT (phone) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0`,
       [phone, hash(code, phone), OTP_TTL_S],
     );
-    await sms.send(phone, `Хизмат: рамзи шумо ${code}`);
+    await sms.send(phone, `Тезрасон: рамзи шумо ${code}`);
     // Дар development рамз дар ҷавоб бармегардад — барои санҷиш
     return { ok: true, ttl: OTP_TTL_S, ...(cfg.isProd ? {} : { devCode: code }) };
   });
@@ -68,13 +68,13 @@ export async function authRoutes(app: App) {
     return rows[0];
   });
 
-  /** Админ: таъини нақш (ронанда, курьер, тарабхона) */
+  /** Админ: таъини нақш (курьер, тарабхона) */
   app.patch('/admin/users/:id', { preHandler: app.auth }, async (req) => {
     if (req.me.role !== 'admin') throw new HttpError(403, 'forbidden');
     const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
     const body = z
       .object({
-        role: z.enum(['customer', 'driver', 'courier', 'merchant', 'admin']),
+        role: z.enum(['customer', 'courier', 'merchant', 'admin']),
         merchantId: z.number().int().nullable().optional(),
       })
       .refine((b) => b.role !== 'merchant' || b.merchantId, 'merchantId барои merchant ҳатмист')

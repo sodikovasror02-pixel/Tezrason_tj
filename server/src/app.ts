@@ -7,13 +7,19 @@ import { Config, Db, HttpError, RedisClient } from './infra.js';
 import { Realtime } from './realtime.js';
 import { SmsSender } from './sms.js';
 import type { Router } from './routing.js';
+import type { PaymentProvider } from './payments.js';
+import type { Dispatcher } from './dispatch.js';
 import type { Role } from './domain/status.js';
 import { authRoutes } from './routes/auth.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { orderRoutes } from './routes/orders.js';
+import { courierRoutes } from './routes/courier.js';
+import { merchantRoutes } from './routes/merchant.js';
+import { addressRoutes } from './routes/addresses.js';
+import { paymentRoutes } from './routes/payments.js';
 
 export type Me = { id: number; phone: string; name: string | null; role: Role; merchant_id: number | null };
-export type Deps = { cfg: Config; db: Db; redis: RedisClient; rt: Realtime; sms: SmsSender; router: Router };
+export type Deps = { cfg: Config; db: Db; redis: RedisClient; rt: Realtime; sms: SmsSender; router: Router; payments: PaymentProvider; dispatcher: Dispatcher };
 export type App = FastifyInstance & {
   deps: Deps;
   auth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
@@ -22,6 +28,8 @@ export type App = FastifyInstance & {
 declare module 'fastify' {
   interface FastifyRequest {
     me: Me;
+    /** Бадани хоми дархост — барои санҷиши имзои webhook */
+    rawBody?: string;
   }
 }
 declare module '@fastify/jwt' {
@@ -37,6 +45,20 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}): Pro
   app.decorateRequest('me', null as unknown as Me);
 
   await app.register(cors, { origin: true });
+
+  // JSON бо нигоҳ доштани бадани хом (HMAC-и webhook); бадани холӣ → {}
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    req.rawBody = body as string;
+    try {
+      done(null, body ? JSON.parse(body as string) : {});
+    } catch {
+      done(Object.assign(new Error('invalid_json'), { statusCode: 400 }), undefined);
+    }
+  });
+  // Формаи HTML (саҳифаи санҷишии пардохт)
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(body as string)));
+  });
   await app.register(fjwt, { secret: deps.cfg.jwtSecret });
   await app.register(fws);
 
@@ -95,5 +117,9 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}): Pro
   await authRoutes(app);
   await catalogRoutes(app);
   await orderRoutes(app);
+  await courierRoutes(app);
+  await merchantRoutes(app);
+  await addressRoutes(app);
+  await paymentRoutes(app);
   return app;
 }

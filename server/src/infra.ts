@@ -15,12 +15,16 @@ export type Config = {
   osrmUrl: string | null;
   /** t = t_osrm · k (OSRM вақтро бе трафик медиҳад) */
   trafficFactor: number;
+  /** Суроғаи берунии сервер (барои пайвандҳои пардохт) */
+  publicUrl: string;
+  paymentWebhookSecret: string;
 };
 
 export function loadConfig(env = process.env): Config {
   const isProd = env.NODE_ENV === 'production';
   const jwtSecret = env.JWT_SECRET ?? (isProd ? '' : 'dev-secret-change-me');
   if (isProd && jwtSecret.length < 32) throw new Error('JWT_SECRET (≥32 аломат) дар production ҳатмист');
+  if (isProd && !env.PAYMENT_WEBHOOK_SECRET) throw new Error('PAYMENT_WEBHOOK_SECRET дар production ҳатмист');
   return {
     port: Number(env.PORT ?? 3000),
     databaseUrl: env.DATABASE_URL ?? 'postgres://hizmat:hizmat@localhost:5432/hizmat',
@@ -31,6 +35,8 @@ export function loadConfig(env = process.env): Config {
     dispatchRadiusKm: Number(env.DISPATCH_RADIUS_KM ?? 5),
     osrmUrl: env.OSRM_URL || null,
     trafficFactor: Number(env.TRAFFIC_FACTOR ?? 1.3),
+    publicUrl: (env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 3000}`).replace(/\/$/, ''),
+    paymentWebhookSecret: env.PAYMENT_WEBHOOK_SECRET ?? (isProd ? '' : 'dev-webhook-secret'),
   };
 }
 

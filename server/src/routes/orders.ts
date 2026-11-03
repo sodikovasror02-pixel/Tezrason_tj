@@ -1,21 +1,24 @@
 import { z } from 'zod';
 import type pg from 'pg';
-import type { App, Me } from '../app.js';
+import type { App } from '../app.js';
 import { HttpError, tx } from '../infra.js';
-import { cartTotals, deliveryFee, haversineKm, surgeAt, taxiFare, Tariff } from '../domain/pricing.js';
-import { canTransition, INITIAL, isFinal, OrderKind } from '../domain/status.js';
+import { cartTotals, deliveryFeeByKm, haversineKm } from '../domain/pricing.js';
+import { etaMinutes } from '../domain/eta.js';
+import { initialStatus, isFinal, OrderKind } from '../domain/status.js';
+import { COURIER_GEO } from '../dispatch.js';
+import { canSee, loadOrder, logEvent, transition } from '../orders-core.js';
 
-const Point = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) });
+export const Point = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) });
 const Items = z.array(z.object({ productId: z.number().int(), qty: z.number().int().min(1).max(99) })).min(1).max(50);
-const Id = z.object({ id: z.coerce.number().int() });
-
-/** Индекси geo алоҳида барои ҳар нақш — такси ба курьер пешниҳод намешавад */
-const geoKey = (role: 'driver' | 'courier') => `geo:${role}`;
-const driverAlive = (id: number) => `driver:alive:${id}`;
-const DRIVER_ALIVE_S = 60; // ронанда бояд ҳар ≤60 с ҷойгиршавиро фиристад
-const ACTIVE_TAXI = ['driver_assigned', 'arrived', 'in_progress'];
-
-type OrderRow = { id: number; kind: OrderKind; status: string; user_id: number; merchant_id: number | null; driver_id: number | null };
+export const Id = z.object({ id: z.coerce.number().int() });
+const opt = (n: number) => z.string().trim().max(n).optional().nullable();
+export const AddressInput = Point.extend({
+  text: z.string().trim().min(3).max(200),
+  entrance: opt(20),
+  floor: opt(20),
+  apartment: opt(20),
+  comment: opt(300),
+});
 
 /** Ҳамроҳ кардани қаторҳои такрорӣ: [{p1,1},{p1,2}] → [{p1,3}] */
 function mergeItems(items: z.infer<typeof Items>) {
@@ -25,19 +28,23 @@ function mergeItems(items: z.infer<typeof Items>) {
 }
 
 export async function orderRoutes(app: App) {
-  const { db, redis, rt, cfg, router } = app.deps;
+  const deps = app.deps;
+  const { db, redis, router, payments } = deps;
 
-  /** Масир + масофаи мустақим (барои шаффофияти ҳисоб) */
-  async function routeFor(from: { lat: number; lon: number }, to: { lat: number; lon: number }) {
-    const r = await router.route(from, to);
-    return { ...r, straightKm: haversineKm(from, to) };
-  }
-
-  /** Нархҳоро ҲАМЕША аз база мегирем — ба нархи клиент бовар намекунем */
+  /**
+   * Нарх ва санҷишҳо — ҲАМЕША аз база (ба нархи клиент бовар намекунем):
+   *  • тарабхона кушода; маҳсулот аз ҳамин тарабхона ва дар ҳаст;
+   *  • минтақа: d₀ (хати рост) ≤ R_тарабхона;
+   *  • ҳадди ақали фармоиш: subtotal ≥ min_order;
+   *  • расонидан аз масофаи роҳ (OSRM ё тахмин).
+   */
   async function priceCart(c: pg.PoolClient | typeof db, merchantId: number, items: z.infer<typeof Items>, to: { lat: number; lon: number }) {
-    const m = (await c.query('SELECT id, kind, name, lat, lon, is_open FROM merchants WHERE id = $1', [merchantId])).rows[0];
+    const m = (await c.query('SELECT id, kind, name, lat, lon, is_open, prep_min, delivery_radius_km, min_order FROM merchants WHERE id = $1', [merchantId])).rows[0];
     if (!m) throw new HttpError(404, 'merchant_not_found');
     if (!m.is_open) throw new HttpError(409, 'merchant_closed');
+    const straightKm = haversineKm({ lat: m.lat, lon: m.lon }, to);
+    if (straightKm > Number(m.delivery_radius_km)) throw new HttpError(409, 'out_of_zone', `${straightKm.toFixed(1)} > ${m.delivery_radius_km} км`);
+
     const merged = mergeItems(items);
     const { rows: prods } = await c.query(
       'SELECT id, name_tj, name_ru, price, available FROM products WHERE merchant_id = $1 AND id = ANY($2::bigint[])',
@@ -50,85 +57,37 @@ export async function orderRoutes(app: App) {
       if (!p.available) throw new HttpError(409, 'product_unavailable', `productId ${i.productId}`);
       return { productId: i.productId, name_tj: p.name_tj, name_ru: p.name_ru, price: p.price as number, qty: i.qty };
     });
-    const fee = deliveryFee({ lat: m.lat, lon: m.lon }, to);
-    return { merchant: m, lines, totals: cartTotals(lines, fee) };
-  }
 
-  async function loadOrder(c: pg.PoolClient | typeof db, id: number, lock = false): Promise<OrderRow> {
-    const { rows } = await c.query(
-      `SELECT id, kind, status, user_id, merchant_id, driver_id FROM orders WHERE id = $1 ${lock ? 'FOR UPDATE' : ''}`,
-      [id],
-    );
-    if (!rows[0]) throw new HttpError(404, 'order_not_found');
-    return { ...rows[0], id: Number(rows[0].id), user_id: Number(rows[0].user_id), merchant_id: rows[0].merchant_id && Number(rows[0].merchant_id), driver_id: rows[0].driver_id && Number(rows[0].driver_id) };
+    const route = await router.route({ lat: m.lat, lon: m.lon }, to);
+    const totals = cartTotals(lines, deliveryFeeByKm(route.distanceKm));
+    if (totals.subtotal < m.min_order) throw new HttpError(409, 'below_min_order', `${totals.subtotal} < ${m.min_order}`);
+    const etaMin = etaMinutes({ prepLeftMin: m.prep_min, courierToMerchantMin: null, merchantToCustomerMin: route.durationMin });
+    return { merchant: m, lines, totals, routeKm: route.distanceKm, etaMin };
   }
-
-  function canSee(me: Me, o: OrderRow): boolean {
-    if (me.role === 'admin') return true;
-    if (o.user_id === me.id) return true;
-    if (me.role === 'merchant' && o.merchant_id === me.merchant_id) return true;
-    if ((me.role === 'driver' || me.role === 'courier') && o.driver_id === me.id) return true;
-    return false;
-  }
-
-  /** Огоҳ кардани ҳамаи тарафҳо дар бораи тағйирот */
-  async function notify(o: OrderRow, status: string) {
-    const payload = { orderId: o.id, kind: o.kind, status };
-    const jobs = [rt.publish(`user:${o.user_id}`, 'order.status', payload)];
-    if (o.merchant_id) jobs.push(rt.publish(`merchant:${o.merchant_id}`, 'order.status', payload));
-    if (o.driver_id) jobs.push(rt.publish(`user:${o.driver_id}`, 'order.status', payload));
-    await Promise.all(jobs);
-  }
-
-  async function logEvent(c: pg.PoolClient, orderId: number, status: string, actorId: number) {
-    await c.query('INSERT INTO order_events (order_id, status, actor_id) VALUES ($1, $2, $3)', [orderId, status, actorId]);
-  }
-
-  /** Ронандаҳои озод дар радиуси R аз нуқта (Redis GEOSEARCH), наздиктарин аввал */
-  async function nearbyFreeDrivers(p: { lat: number; lon: number }, limit = 10): Promise<{ id: number; km: number }[]> {
-    const res = (await redis.geosearch(geoKey('driver'), 'FROMLONLAT', p.lon, p.lat, 'BYRADIUS', cfg.dispatchRadiusKm, 'km', 'ASC', 'COUNT', 50, 'WITHDIST')) as [string, string][];
-    if (!res.length) return [];
-    const ids = res.map(([id]) => Number(id));
-    const alive = await redis.mget(ids.map(driverAlive));
-    const { rows: busy } = await db.query(
-      'SELECT DISTINCT driver_id FROM orders WHERE kind = $1 AND status = ANY($2) AND driver_id = ANY($3::bigint[])',
-      ['taxi', ACTIVE_TAXI, ids],
-    );
-    const busySet = new Set(busy.map((r) => Number(r.driver_id)));
-    return res
-      .map(([id, km], i) => ({ id: Number(id), km: Number(km), alive: alive[i] }))
-      .filter((d) => d.alive && !busySet.has(d.id))
-      .slice(0, limit)
-      .map(({ id, km }) => ({ id, km }));
-  }
-
-  // ───────────── Хӯрок / Маркет ─────────────
 
   app.post('/quotes/cart', { preHandler: app.auth }, async (req) => {
     const b = z.object({ merchantId: z.number().int(), items: Items, to: Point }).parse(req.body);
-    const { lines, totals } = await priceCart(db, b.merchantId, b.items, b.to);
-    return { lines, ...totals };
+    const { lines, totals, routeKm, etaMin } = await priceCart(db, b.merchantId, b.items, b.to);
+    return { lines, ...totals, routeKm, etaMin };
   });
 
   app.post('/orders', { preHandler: app.auth }, async (req, reply) => {
     const b = z
-      .object({
-        merchantId: z.number().int(),
-        items: Items,
-        address: z.string().trim().min(3).max(200),
-        to: Point,
-        payment: z.enum(['cash', 'card']),
-      })
+      .object({ merchantId: z.number().int(), items: Items, address: AddressInput, payment: z.enum(['cash', 'card']) })
       .parse(req.body);
+    const a = b.address;
 
     const order = await tx(db, async (c) => {
-      const { merchant, lines, totals } = await priceCart(c, b.merchantId, b.items, b.to);
+      const { merchant, lines, totals, routeKm, etaMin } = await priceCart(c, b.merchantId, b.items, a);
       const kind: OrderKind = merchant.kind === 'market' ? 'market' : 'food';
-      const status = INITIAL[kind];
+      const status = initialStatus(b.payment);
       const { rows } = await c.query(
-        `INSERT INTO orders (user_id, kind, status, merchant_id, address, lat, lon, payment, subtotal, delivery_fee, service_fee, total)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-        [req.me.id, kind, status, b.merchantId, b.address, b.to.lat, b.to.lon, b.payment, totals.subtotal, totals.deliveryFee, totals.serviceFee, totals.total],
+        `INSERT INTO orders (user_id, kind, status, merchant_id, address, lat, lon, entrance, floor, apartment, comment,
+                             payment, payment_status, subtotal, delivery_fee, service_fee, total, route_km, eta_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18, now() + make_interval(mins => $19))
+         RETURNING *`,
+        [req.me.id, kind, status, b.merchantId, a.text, a.lat, a.lon, a.entrance ?? null, a.floor ?? null, a.apartment ?? null, a.comment ?? null,
+         b.payment, b.payment === 'card' ? 'pending' : 'none', totals.subtotal, totals.deliveryFee, totals.serviceFee, totals.total, routeKm.toFixed(2), etaMin],
       );
       const o = rows[0];
       for (const l of lines)
@@ -137,162 +96,37 @@ export async function orderRoutes(app: App) {
       return { ...o, items: lines };
     });
 
-    await rt.publish(`merchant:${b.merchantId}`, 'order.new', { orderId: Number(order.id) });
-    return reply.code(201).send(order);
-  });
-
-  // ───────────── Такси ─────────────
-
-  app.post('/quotes/taxi', async (req) => {
-    const b = z.object({ from: Point, to: Point }).parse(req.body);
-    const tariffs = (await db.query<Tariff>('SELECT id, base, per_km, per_min, min_fare FROM tariffs ORDER BY base')).rows;
-    const surge = surgeAt(new Date());
-    const route = await routeFor(b.from, b.to);
-    return { route, quotes: tariffs.map((t) => taxiFare(route, t, surge)) };
-  });
-
-  app.post('/rides', { preHandler: app.auth }, async (req, reply) => {
-    const b = z
-      .object({
-        from: Point,
-        to: Point,
-        fromName: z.string().max(120).optional(),
-        toName: z.string().max(120).optional(),
-        tariffId: z.string(),
-        payment: z.enum(['cash', 'card']),
-      })
-      .parse(req.body);
-    const t = (await db.query<Tariff>('SELECT id, base, per_km, per_min, min_fare FROM tariffs WHERE id = $1', [b.tariffId])).rows[0];
-    if (!t) throw new HttpError(400, 'tariff_not_found');
-    if (haversineKm(b.from, b.to) < 0.2) throw new HttpError(400, 'ride_too_short');
-    const route = await routeFor(b.from, b.to);
-    const q = taxiFare(route, t, surgeAt(new Date()));
-
-    const order = await tx(db, async (c) => {
-      const { rows } = await c.query(
-        `INSERT INTO orders (user_id, kind, status, address, lat, lon, payment, total)
-         VALUES ($1,'taxi',$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [req.me.id, INITIAL.taxi, b.toName ?? null, b.to.lat, b.to.lon, b.payment, q.total],
-      );
-      const o = rows[0];
-      await c.query(
-        `INSERT INTO rides (order_id, tariff_id, from_lat, from_lon, to_lat, to_lon, from_name, to_name, route_km, minutes, surge)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [o.id, t.id, b.from.lat, b.from.lon, b.to.lat, b.to.lon, b.fromName ?? null, b.toName ?? null, q.routeKm.toFixed(3), q.minutes.toFixed(2), q.surge],
-      );
-      await logEvent(c, o.id, INITIAL.taxi, req.me.id);
-      return o;
-    });
-
-    // Диспетчеризатсия: пешниҳод ба ронандаҳои наздик (аввалин қабулкунанда мегирад)
-    const drivers = await nearbyFreeDrivers(b.from);
-    await Promise.all(
-      drivers.map((d) =>
-        rt.publish(`user:${d.id}`, 'ride.offer', { orderId: Number(order.id), pickupKm: d.km, from: b.from, to: b.to, total: q.total, tariffId: t.id }),
-      ),
-    );
-    return reply.code(201).send({ ...order, quote: q, route, offeredTo: drivers.length });
-  });
-
-  // ───────────── Ронанда / Курьер ─────────────
-
-  app.post('/drivers/location', { preHandler: app.auth }, async (req) => {
-    if (req.me.role !== 'driver' && req.me.role !== 'courier') throw new HttpError(403, 'forbidden');
-    const p = Point.parse(req.body);
-    const role = req.me.role;
-    await redis.multi().geoadd(geoKey(role), p.lon, p.lat, String(req.me.id)).set(driverAlive(req.me.id), '1', 'EX', DRIVER_ALIVE_S).exec();
-    // Агар дар сафар бошад — ба мизоҷ ҷойгиршавиро мефиристем
-    const { rows } = await db.query(
-      `SELECT id, user_id FROM orders WHERE driver_id = $1 AND status = ANY($2)`,
-      [req.me.id, [...ACTIVE_TAXI, 'picked_up']],
-    );
-    await Promise.all(rows.map((o) => rt.publish(`user:${o.user_id}`, 'driver.location', { orderId: Number(o.id), ...p })));
-    return { ok: true };
-  });
-
-  /** Хатми смена: аз харитаи диспетчер хориҷ мешавад */
-  app.post('/drivers/offline', { preHandler: app.auth }, async (req) => {
-    if (req.me.role !== 'driver' && req.me.role !== 'courier') throw new HttpError(403, 'forbidden');
-    await redis.multi().zrem(geoKey(req.me.role), String(req.me.id)).del(driverAlive(req.me.id)).exec();
-    return { ok: true };
-  });
-
-  /** Фармоишҳои озод барои ронанда (такси дар радиус) ё курьер (омода/қабулшуда) */
-  app.get('/jobs', { preHandler: app.auth }, async (req) => {
-    if (req.me.role === 'courier') {
-      const { rows } = await db.query(
-        `SELECT o.id, o.kind, o.status, o.address, o.total, o.delivery_fee, m.name AS merchant_name, m.lat AS merchant_lat, m.lon AS merchant_lon
-         FROM orders o JOIN merchants m ON m.id = o.merchant_id
-         WHERE o.kind IN ('food','market') AND o.status IN ('accepted','ready') AND o.driver_id IS NULL
-         ORDER BY o.created_at LIMIT 50`,
-      );
-      return rows;
-    }
-    if (req.me.role === 'driver') {
-      const pos = (await redis.geopos(geoKey('driver'), String(req.me.id)))[0];
-      if (!pos) throw new HttpError(409, 'location_unknown', 'Аввал POST /drivers/location');
-      const [lon, lat] = pos.map(Number);
-      const { rows } = await db.query(
-        `SELECT o.id, o.total, r.* FROM orders o JOIN rides r ON r.order_id = o.id
-         WHERE o.status = 'searching' ORDER BY o.created_at LIMIT 100`,
-      );
-      return rows
-        .map((r) => ({ ...r, pickupKm: haversineKm({ lat, lon }, { lat: r.from_lat, lon: r.from_lon }) }))
-        .filter((r) => r.pickupKm <= cfg.dispatchRadiusKm)
-        .sort((a, b) => a.pickupKm - b.pickupKm);
-    }
-    throw new HttpError(403, 'forbidden');
-  });
-
-  /**
-   * Гирифтани фармоиш. Атомӣ: `UPDATE … WHERE driver_id IS NULL` —
-   * агар ду ронанда ҳамзамон пахш кунанд, танҳо яке мегирад (дигаре 409).
-   */
-  app.post('/orders/:id/claim', { preHandler: app.auth }, async (req) => {
-    const { id } = Id.parse(req.params);
-    const me = req.me;
-    const o = await loadOrder(db, id);
-
-    if (o.kind === 'taxi') {
-      if (me.role !== 'driver') throw new HttpError(403, 'forbidden');
-      const active = await db.query('SELECT 1 FROM orders WHERE driver_id = $1 AND kind = $2 AND status = ANY($3)', [me.id, 'taxi', ACTIVE_TAXI]);
-      if (active.rowCount) throw new HttpError(409, 'driver_busy');
-      const updated = await tx(db, async (c) => {
-        const { rows } = await c.query(
-          `UPDATE orders SET driver_id = $2, status = 'driver_assigned', updated_at = now()
-           WHERE id = $1 AND status = 'searching' AND driver_id IS NULL RETURNING id`,
-          [id, me.id],
-        );
-        if (!rows[0]) return null;
-        await logEvent(c, id, 'driver_assigned', me.id);
-        return rows[0];
-      });
-      if (!updated) throw new HttpError(409, 'already_taken');
-      await notify({ ...o, driver_id: me.id }, 'driver_assigned');
-      return { ok: true, status: 'driver_assigned' };
+    if (b.payment === 'cash') {
+      await deps.rt.publish(`merchant:${b.merchantId}`, 'order.new', { orderId: order.id });
+      return reply.code(201).send(order);
     }
 
-    if (me.role !== 'courier') throw new HttpError(403, 'forbidden');
-    const { rows } = await db.query(
-      `UPDATE orders SET driver_id = $2, updated_at = now()
-       WHERE id = $1 AND status IN ('accepted','ready') AND driver_id IS NULL RETURNING id, status`,
-      [id, me.id],
-    );
-    if (!rows[0]) throw new HttpError(409, 'already_taken');
-    await notify({ ...o, driver_id: me.id }, rows[0].status);
-    return { ok: true, status: rows[0].status };
+    // Корт: сессияи пардохт; тарабхона фармоишро танҳо баъди тасдиқи бонк мебинад
+    try {
+      const p = await payments.createPayment({ orderId: order.id, amount: order.total });
+      await db.query(`INSERT INTO payments (order_id, provider, provider_ref, amount, status) VALUES ($1,$2,$3,$4,'pending')`, [order.id, payments.name, p.ref, order.total]);
+      return reply.code(201).send({ ...order, checkoutUrl: p.checkoutUrl });
+    } catch {
+      await transition(deps, order.id, 'cancelled', 'system', null);
+      throw new HttpError(502, 'payment_unavailable');
+    }
   });
-
-  // ───────────── Умумӣ ─────────────
 
   app.get('/orders', { preHandler: app.auth }, async (req) => {
     const me = req.me;
-    const where =
-      me.role === 'merchant' ? 'o.merchant_id = $1' : me.role === 'driver' || me.role === 'courier' ? 'o.driver_id = $1' : me.role === 'admin' ? '$1::bigint IS NOT NULL' : 'o.user_id = $1';
-    const arg = me.role === 'merchant' ? me.merchant_id : me.id;
+    const { active } = z.object({ active: z.enum(['1']).optional() }).parse(req.query);
+    let where: string;
+    let arg: number | null;
+    if (me.role === 'merchant') [where, arg] = [`o.merchant_id = $1 AND o.status <> 'awaiting_payment'`, me.merchant_id];
+    else if (me.role === 'courier') [where, arg] = ['o.courier_id = $1', me.id];
+    else if (me.role === 'admin') [where, arg] = ['$1::bigint IS NOT NULL', me.id];
+    else [where, arg] = ['o.user_id = $1', me.id];
+    if (active) where += ` AND o.status NOT IN ('delivered','cancelled')`;
     const { rows } = await db.query(
-      `SELECT o.*, m.name AS merchant_name, r.from_name, r.to_name, r.tariff_id
-       FROM orders o LEFT JOIN merchants m ON m.id = o.merchant_id LEFT JOIN rides r ON r.order_id = o.id
+      `SELECT o.*, m.name AS merchant_name,
+              COALESCE((SELECT json_agg(json_build_object('product_id', i.product_id, 'name_tj', i.name_tj, 'name_ru', i.name_ru, 'price', i.price, 'qty', i.qty))
+                        FROM order_items i WHERE i.order_id = o.id), '[]') AS items
+       FROM orders o JOIN merchants m ON m.id = o.merchant_id
        WHERE ${where} ORDER BY o.created_at DESC LIMIT 100`,
       [arg],
     );
@@ -303,42 +137,39 @@ export async function orderRoutes(app: App) {
     const { id } = Id.parse(req.params);
     const o = await loadOrder(db, id);
     if (!canSee(req.me, o)) throw new HttpError(404, 'order_not_found'); // 404, на 403 — мавҷудиятро ошкор намекунем
-    const [full, items, ride, events] = await Promise.all([
+    const [full, items, events, pay] = await Promise.all([
       db.query(
-        `SELECT o.*, m.name AS merchant_name, m.lat AS merchant_lat, m.lon AS merchant_lon
-         FROM orders o LEFT JOIN merchants m ON m.id = o.merchant_id WHERE o.id = $1`,
+        `SELECT o.*, m.name AS merchant_name, m.lat AS merchant_lat, m.lon AS merchant_lon, u.name AS courier_name, u.phone AS courier_phone
+         FROM orders o JOIN merchants m ON m.id = o.merchant_id LEFT JOIN users u ON u.id = o.courier_id WHERE o.id = $1`,
         [id],
       ),
       db.query('SELECT product_id, name_tj, name_ru, price, qty FROM order_items WHERE order_id = $1', [id]),
-      db.query('SELECT * FROM rides WHERE order_id = $1', [id]),
       db.query('SELECT status, actor_id, created_at FROM order_events WHERE order_id = $1 ORDER BY id', [id]),
+      db.query(`SELECT provider_ref FROM payments WHERE order_id = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1`, [id]),
     ]);
-    let driverLocation = null;
-    if (o.driver_id && !isFinal(o.kind, o.status)) {
-      const pos = (await redis.geopos(geoKey(o.kind === 'taxi' ? 'driver' : 'courier'), String(o.driver_id)))[0];
-      if (pos) driverLocation = { lon: Number(pos[0]), lat: Number(pos[1]) };
+    let courierLocation = null;
+    if (o.courier_id && !isFinal(o.status)) {
+      const pos = (await redis.geopos(COURIER_GEO, String(o.courier_id)))[0];
+      if (pos) courierLocation = { lon: Number(pos[0]), lat: Number(pos[1]) };
     }
-    const r = ride.rows[0];
-    const route = r ? await router.route({ lat: r.from_lat, lon: r.from_lon }, { lat: r.to_lat, lon: r.to_lon }) : null;
-    return { ...full.rows[0], items: items.rows, ride: r ? { ...r, geometry: route!.geometry, routeSource: route!.source } : null, events: events.rows, driverLocation };
+    const r = full.rows[0];
+    // Телефони курьер танҳо ба мизоҷ ва танҳо то расонидан
+    if (req.me.id !== o.user_id || isFinal(o.status)) delete r.courier_phone;
+    const checkoutUrl = o.user_id === req.me.id && o.status === 'awaiting_payment' && pay.rows[0] ? `${deps.cfg.publicUrl}/payments/mock/${pay.rows[0].provider_ref}` : null;
+    return { ...r, items: items.rows, events: events.rows, courierLocation, checkoutUrl };
   });
 
+  /** Тағйири ҳолат: мизоҷ (бекор), тарабхона (қабул/омода/бекор), курьер (гирифт/расонд) */
   app.post('/orders/:id/status', { preHandler: app.auth }, async (req) => {
     const { id } = Id.parse(req.params);
     const { status } = z.object({ status: z.string() }).parse(req.body);
     const me = req.me;
-
-    const o = await tx(db, async (c) => {
-      const o = await loadOrder(c, id, true); // FOR UPDATE — ҳимоя аз race condition
+    await transition(deps, id, status, me.role, me.id, (o) => {
       if (!canSee(me, o)) throw new HttpError(404, 'order_not_found');
-      // Ронанда/курьер танҳо фармоиши ба худ гирифтаро идора мекунад
-      if ((me.role === 'driver' || me.role === 'courier') && o.driver_id !== me.id) throw new HttpError(403, 'forbidden');
-      if (!canTransition(o.kind, o.status, status, me.role)) throw new HttpError(409, 'invalid_transition', `${o.status} → ${status} (${me.role})`);
-      await c.query('UPDATE orders SET status = $2, updated_at = now() WHERE id = $1', [id, status]);
-      await logEvent(c, id, status, me.id);
-      return o;
+      // Мизоҷ танҳо ҳамчун мизоҷ; курьер танҳо фармоиши ба худ таъиншуда
+      if (me.role === 'courier' && o.courier_id !== me.id) throw new HttpError(403, 'forbidden');
+      if (me.role === 'customer' && o.user_id !== me.id) throw new HttpError(404, 'order_not_found');
     });
-    await notify(o, status);
     return { ok: true, status };
   });
 }
