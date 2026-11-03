@@ -53,6 +53,7 @@ export default function OrderScreen({ nav, id }: { nav: Nav; id: number }) {
             to={{ lat: o.ride.to_lat, lon: o.ride.to_lon }}
             route={o.ride.geometry}
             driver={showDriver ? driver : null}
+            driverIcon={o.kind === 'taxi' ? '🚕' : '🛵'}
             height={300}
           />
         )}

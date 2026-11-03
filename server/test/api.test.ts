@@ -162,6 +162,8 @@ describe('хӯрок: фармоиш → тарабхона → курьер', (
     const jobs = (await call('GET', '/jobs', courier.token)).body;
     expect(jobs.some((j: any) => Number(j.id) === Number(o.id))).toBe(true);
     expect((await call('POST', `/orders/${o.id}/claim`, courier.token)).status).toBe(200);
+    const forCourier = (await call('GET', `/orders/${o.id}`, courier.token)).body;
+    expect(forCourier).toMatchObject({ merchant_name: 'Ошхонаи Роҳат', merchant_lat: 38.5733, merchant_lon: 68.7864 });
 
     expect((await call('POST', `/orders/${o.id}/status`, courier.token, { status: 'picked_up' })).status).toBe(409); // ҳанӯз ready нест
     expect((await call('POST', `/orders/${o.id}/status`, merchant.token, { status: 'ready' })).status).toBe(200);
@@ -202,6 +204,17 @@ describe('такси: диспетчеризатсия ва race condition', () 
     const r = await call('POST', '/rides', customer.token, { from: OZODI, to: AIRPORT, fromName: 'Озодӣ', toName: 'Фурудгоҳ', tariffId: 'econom', payment: 'cash' });
     expect(r.status).toBe(201);
     expect(r.body.offeredTo).toBe(2); // дури 25 км пешниҳод намегирад
+
+    // Курьери наздик такси намегирад (индекси geo алоҳида)
+    const courierNear = await userWithRole('+992930000005', 'courier');
+    await call('POST', '/drivers/location', courierNear.token, OZODI);
+    const rc = await call('POST', '/rides', customer.token, { from: OZODI, to: AIRPORT, tariffId: 'econom', payment: 'cash' });
+    expect(rc.body.offeredTo).toBe(2);
+    expect((await call('POST', `/orders/${rc.body.id}/status`, customer.token, { status: 'cancelled' })).status).toBe(200);
+    expect(await custWs.next('order.status')).toMatchObject({ orderId: rc.body.id, status: 'cancelled' });
+    // Ронандаи офлайн пешниҳод намегирад
+    await call('POST', '/drivers/offline', far.token);
+    expect((await call('POST', '/drivers/offline', customer.token)).status).toBe(403);
     const offer = await nearWs.next('ride.offer');
     expect(offer.orderId).toBe(Number(r.body.id));
     expect(offer.pickupKm).toBeLessThan(0.2);

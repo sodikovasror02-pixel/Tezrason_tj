@@ -11,6 +11,8 @@ export type RouteMapProps = {
   route?: [number, number][] | null;
   onPick?: (p: GeoPoint) => void;
   height?: number;
+  /** Тасвири ронанда: 🚕 (такси) ё 🛵 (курьер) */
+  driverIcon?: string;
 };
 
 /** Маркази Душанбе */
@@ -22,7 +24,7 @@ const ll = (p: GeoPoint) => ({ latitude: p.lat, longitude: p.lon });
  * Харита (iOS — Apple Maps, Android — Google Maps).
  * Барои сохтани APK калиди Google Maps лозим аст: GOOGLE_MAPS_API_KEY (ниг. app.config.js).
  */
-export default function RouteMap({ from, to, driver, route, onPick, height = 260 }: RouteMapProps) {
+export default function RouteMap({ from, to, driver, route, onPick, height = 260, driverIcon = '🚕' }: RouteMapProps) {
   const ref = useRef<MapView>(null);
 
   // Ҳамаи нуқтаҳоро дар экран ҷой медиҳем
@@ -48,7 +50,7 @@ export default function RouteMap({ from, to, driver, route, onPick, height = 260
       )}
       {from && <Marker coordinate={ll(from)} pinColor="green" />}
       {to && <Marker coordinate={ll(to)} pinColor="red" />}
-      {driver && <Marker coordinate={ll(driver)} pinColor="gold" title="🚕" />}
+      {driver && <Marker coordinate={ll(driver)} pinColor="gold" title={driverIcon} />}
     </MapView>
   );
 }

@@ -43,6 +43,8 @@ type Store = {
   wsConnected: boolean;
   /** Ҷойгиршавии охирини ронанда/курьер аз рӯи orderId (аз WebSocket) */
   driverLocations: Record<number, { lat: number; lon: number }>;
+  /** Обуна ба ҳамаи паёмҳои WebSocket (масалан, ride.offer барои ронанда) */
+  onWs: (fn: (m: WsMessage) => void) => () => void;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -58,6 +60,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [wsConnected, setWsConnected] = useState(false);
   const [driverLocations, setDriverLocations] = useState<Record<number, { lat: number; lon: number }>>({});
   const tokenRef = useRef<string | null>(null);
+  const wsListeners = useRef(new Set<(m: WsMessage) => void>());
+  const onWs = useCallback((fn: (m: WsMessage) => void) => {
+    wsListeners.current.add(fn);
+    return () => void wsListeners.current.delete(fn);
+  }, []);
 
   const signOut = useCallback(async () => {
     tokenRef.current = null;
@@ -126,6 +133,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
       ws.onmessage = (ev) => {
         const m = JSON.parse(String(ev.data)) as WsMessage;
+        wsListeners.current.forEach((fn) => fn(m));
         if (m.event === 'driver.location') {
           const d = m.data as { orderId: number; lat: number; lon: number };
           setDriverLocations((x) => ({ ...x, [d.orderId]: { lat: d.lat, lon: d.lon } }));
@@ -199,8 +207,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       refreshOrders,
       wsConnected,
       driverLocations,
+      onWs,
     };
-  }, [lang, booting, bootError, boot, user, signIn, signOut, cart, orders, ordersLoading, refreshOrders, wsConnected, driverLocations]);
+  }, [lang, booting, bootError, boot, user, signIn, signOut, cart, orders, ordersLoading, refreshOrders, wsConnected, driverLocations, onWs]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -14,6 +14,7 @@ import TaxiScreen from './src/screens/TaxiScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import OrderScreen from './src/screens/OrderScreen';
+import DriverApp from './src/driver/DriverApp';
 
 function Root() {
   const { t, booting, bootError, retryBoot, user, errText } = useStore();
@@ -35,6 +36,7 @@ function Root() {
   if (booting) return <View style={styles.root}><Loading /></View>;
   if (bootError) return <View style={styles.root}><ErrorView text={errText(bootError)} retryLabel={t('retry')} onRetry={() => void retryBoot()} /></View>;
   if (!user) return <View style={styles.root}><StatusBar style="dark" /><LoginScreen /></View>;
+  if (user.role === 'driver' || user.role === 'courier') return <View style={styles.root}><StatusBar style="dark" /><DriverApp /></View>;
 
   let screen: React.ReactNode;
   switch (route.name) {

@@ -9,7 +9,8 @@ const Point = z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-
 const Items = z.array(z.object({ productId: z.number().int(), qty: z.number().int().min(1).max(99) })).min(1).max(50);
 const Id = z.object({ id: z.coerce.number().int() });
 
-const DRIVERS_GEO = 'drivers:geo';
+/** Индекси geo алоҳида барои ҳар нақш — такси ба курьер пешниҳод намешавад */
+const geoKey = (role: 'driver' | 'courier') => `geo:${role}`;
 const driverAlive = (id: number) => `driver:alive:${id}`;
 const DRIVER_ALIVE_S = 60; // ронанда бояд ҳар ≤60 с ҷойгиршавиро фиристад
 const ACTIVE_TAXI = ['driver_assigned', 'arrived', 'in_progress'];
@@ -85,7 +86,7 @@ export async function orderRoutes(app: App) {
 
   /** Ронандаҳои озод дар радиуси R аз нуқта (Redis GEOSEARCH), наздиктарин аввал */
   async function nearbyFreeDrivers(p: { lat: number; lon: number }, limit = 10): Promise<{ id: number; km: number }[]> {
-    const res = (await redis.geosearch(DRIVERS_GEO, 'FROMLONLAT', p.lon, p.lat, 'BYRADIUS', cfg.dispatchRadiusKm, 'km', 'ASC', 'COUNT', 50, 'WITHDIST')) as [string, string][];
+    const res = (await redis.geosearch(geoKey('driver'), 'FROMLONLAT', p.lon, p.lat, 'BYRADIUS', cfg.dispatchRadiusKm, 'km', 'ASC', 'COUNT', 50, 'WITHDIST')) as [string, string][];
     if (!res.length) return [];
     const ids = res.map(([id]) => Number(id));
     const alive = await redis.mget(ids.map(driverAlive));
@@ -198,13 +199,21 @@ export async function orderRoutes(app: App) {
   app.post('/drivers/location', { preHandler: app.auth }, async (req) => {
     if (req.me.role !== 'driver' && req.me.role !== 'courier') throw new HttpError(403, 'forbidden');
     const p = Point.parse(req.body);
-    await redis.multi().geoadd(DRIVERS_GEO, p.lon, p.lat, String(req.me.id)).set(driverAlive(req.me.id), '1', 'EX', DRIVER_ALIVE_S).exec();
+    const role = req.me.role;
+    await redis.multi().geoadd(geoKey(role), p.lon, p.lat, String(req.me.id)).set(driverAlive(req.me.id), '1', 'EX', DRIVER_ALIVE_S).exec();
     // Агар дар сафар бошад — ба мизоҷ ҷойгиршавиро мефиристем
     const { rows } = await db.query(
       `SELECT id, user_id FROM orders WHERE driver_id = $1 AND status = ANY($2)`,
       [req.me.id, [...ACTIVE_TAXI, 'picked_up']],
     );
     await Promise.all(rows.map((o) => rt.publish(`user:${o.user_id}`, 'driver.location', { orderId: Number(o.id), ...p })));
+    return { ok: true };
+  });
+
+  /** Хатми смена: аз харитаи диспетчер хориҷ мешавад */
+  app.post('/drivers/offline', { preHandler: app.auth }, async (req) => {
+    if (req.me.role !== 'driver' && req.me.role !== 'courier') throw new HttpError(403, 'forbidden');
+    await redis.multi().zrem(geoKey(req.me.role), String(req.me.id)).del(driverAlive(req.me.id)).exec();
     return { ok: true };
   });
 
@@ -220,7 +229,7 @@ export async function orderRoutes(app: App) {
       return rows;
     }
     if (req.me.role === 'driver') {
-      const pos = (await redis.geopos(DRIVERS_GEO, String(req.me.id)))[0];
+      const pos = (await redis.geopos(geoKey('driver'), String(req.me.id)))[0];
       if (!pos) throw new HttpError(409, 'location_unknown', 'Аввал POST /drivers/location');
       const [lon, lat] = pos.map(Number);
       const { rows } = await db.query(
@@ -295,14 +304,18 @@ export async function orderRoutes(app: App) {
     const o = await loadOrder(db, id);
     if (!canSee(req.me, o)) throw new HttpError(404, 'order_not_found'); // 404, на 403 — мавҷудиятро ошкор намекунем
     const [full, items, ride, events] = await Promise.all([
-      db.query('SELECT * FROM orders WHERE id = $1', [id]),
+      db.query(
+        `SELECT o.*, m.name AS merchant_name, m.lat AS merchant_lat, m.lon AS merchant_lon
+         FROM orders o LEFT JOIN merchants m ON m.id = o.merchant_id WHERE o.id = $1`,
+        [id],
+      ),
       db.query('SELECT product_id, name_tj, name_ru, price, qty FROM order_items WHERE order_id = $1', [id]),
       db.query('SELECT * FROM rides WHERE order_id = $1', [id]),
       db.query('SELECT status, actor_id, created_at FROM order_events WHERE order_id = $1 ORDER BY id', [id]),
     ]);
     let driverLocation = null;
     if (o.driver_id && !isFinal(o.kind, o.status)) {
-      const pos = (await redis.geopos(DRIVERS_GEO, String(o.driver_id)))[0];
+      const pos = (await redis.geopos(geoKey(o.kind === 'taxi' ? 'driver' : 'courier'), String(o.driver_id)))[0];
       if (pos) driverLocation = { lon: Number(pos[0]), lat: Number(pos[1]) };
     }
     const r = ride.rows[0];

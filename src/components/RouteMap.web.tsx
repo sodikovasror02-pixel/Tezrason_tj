@@ -12,7 +12,7 @@ import type { RouteMapProps } from './RouteMap';
 const BOUNDS = { minLat: 38.52, maxLat: 38.62, minLon: 68.72, maxLon: 68.86 };
 const COS = Math.cos((38.57 * Math.PI) / 180);
 
-export default function RouteMap({ from, to, driver, route, onPick, height = 260 }: RouteMapProps) {
+export default function RouteMap({ from, to, driver, route, onPick, height = 260, driverIcon = '🚕' }: RouteMapProps) {
   const [w, setW] = useState(0);
   const ref = useRef<React.ComponentRef<typeof Pressable>>(null);
   const spanX = (BOUNDS.maxLon - BOUNDS.minLon) * COS;
@@ -71,7 +71,7 @@ export default function RouteMap({ from, to, driver, route, onPick, height = 260
       {segs}
       {pin(from, '🟢', 'from')}
       {pin(to, '🔴', 'to')}
-      {pin(driver, '🚕', 'driver')}
+      {pin(driver, driverIcon, 'driver')}
       <View style={{ position: 'absolute', right: 6, bottom: 4 }}>
         <Text style={{ fontSize: 10, color: C.muted }}>web preview</Text>
       </View>

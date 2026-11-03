@@ -67,7 +67,28 @@ export type OrderDetail = Order & {
   lat: number | null;
   lon: number | null;
   driverLocation: { lat: number; lon: number } | null;
+  merchant_lat: number | null;
+  merchant_lon: number | null;
 };
+
+/** GET /jobs — ронанда: сафарҳои озод дар радиус; курьер: фармоишҳои омода */
+export type DriverJob = {
+  id: number;
+  total: number;
+  pickupKm?: number;
+  from_name?: string | null;
+  to_name?: string | null;
+  from_lat?: number;
+  from_lon?: number;
+  route_km?: string;
+  merchant_name?: string;
+  merchant_lat?: number;
+  merchant_lon?: number;
+  address?: string | null;
+  delivery_fee?: number;
+  status?: string;
+};
+export type RideOffer = { orderId: number; pickupKm: number; total: number; tariffId: string; from: { lat: number; lon: number }; to: { lat: number; lon: number } };
 
 export type CartQuote = { subtotal: number; deliveryFee: number; serviceFee: number; total: number };
 
