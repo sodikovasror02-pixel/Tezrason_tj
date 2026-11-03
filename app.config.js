@@ -1,7 +1,9 @@
 // Конфигуратсияи динамикӣ (app.json + муҳит). Калидҳо аз муҳит, на дар код.
 
-/** ID-и лоиҳа дар expo.dev (сирр нест). Пас аз сохтани лоиҳа ин ҷо гузоред. */
-const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || null;
+/** ID-и лоиҳа дар expo.dev (сирр нест) */
+const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || '14c4286e-b894-4e4d-b8f7-afbece4f9164';
+/** Ҳисоби expo.dev, ки соҳиби лоиҳа аст */
+const EAS_OWNER = 'asrorsodikov';
 
 module.exports = ({ config }) => {
   const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -11,6 +13,7 @@ module.exports = ({ config }) => {
     ...config,
     name: 'Тезрасон',
     slug: 'tezrason',
+    owner: EAS_OWNER,
     scheme: 'tezrason',
     ios: {
       ...config.ios,

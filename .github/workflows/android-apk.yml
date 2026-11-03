@@ -1,6 +1,6 @@
 # Сохтани APK-и Android дар серверҳои EAS (Expo).
 # Талабот (як маротиба):
-#   1) expo.dev → Create project «tezrason» → Project ID-ро дар app.config.js (EAS_PROJECT_ID) гузоред.
+#   1) Лоиҳа: expo.dev/accounts/asrorsodikov/projects/tezrason (ID дар app.config.js).
 #   2) expo.dev → Account settings → Access tokens → Create → GitHub → Settings → Secrets → Actions → EXPO_TOKEN.
 #   3) (ихтиёрӣ) expo.dev → Project → Environment variables → GOOGLE_MAPS_API_KEY (secret) — барои харита.
 # Натиҷа: expo.dev → Project → Builds → пайванди .apk (QR-код барои насб).
