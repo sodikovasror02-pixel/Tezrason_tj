@@ -41,6 +41,8 @@ module.exports = ({ config }) => {
         },
       ],
       ...(mapsKey ? [['react-native-maps', { androidGoogleMapsApiKey: mapsKey }]] : []),
+      // Ҳисоботи хатоҳои native ба сервер (ниг. plugins/withCrashReporter.js)
+      ['./plugins/withCrashReporter', { endpoint: `${process.env.EXPO_PUBLIC_API_URL || 'https://tezrason-api.onrender.com'}/client-errors` }],
     ],
     extra: { ...config.extra, ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}) },
   };

@@ -17,6 +17,7 @@ import { courierRoutes } from './routes/courier.js';
 import { merchantRoutes } from './routes/merchant.js';
 import { addressRoutes } from './routes/addresses.js';
 import { paymentRoutes } from './routes/payments.js';
+import { clientErrorRoutes } from './routes/clientErrors.js';
 
 export type Me = { id: number; phone: string; name: string | null; role: Role; merchant_id: number | null };
 export type Deps = { cfg: Config; db: Db; redis: RedisClient; rt: Realtime; sms: SmsSender; router: Router; payments: PaymentProvider; dispatcher: Dispatcher };
@@ -40,7 +41,8 @@ declare module '@fastify/jwt' {
 }
 
 export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}): Promise<App> {
-  const app = Fastify({ logger: opts.logger ?? false }) as unknown as App;
+  // trustProxy: Render (ва дигар хостингҳо) IP-и мизоҷро дар X-Forwarded-For мефиристанд
+  const app = Fastify({ logger: opts.logger ?? false, trustProxy: true }) as unknown as App;
   app.decorate('deps', deps);
   app.decorateRequest('me', null as unknown as Me);
 
@@ -125,5 +127,6 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}): Pro
   await merchantRoutes(app);
   await addressRoutes(app);
   await paymentRoutes(app);
+  await clientErrorRoutes(app);
   return app;
 }

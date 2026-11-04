@@ -392,6 +392,20 @@ describe('production: рақамҳои тестӣ', () => {
   });
 });
 
+describe('ҳисоботи хатоҳо', () => {
+  it('қабул мекунад, нодурустро рад мекунад, басомадро маҳдуд мекунад', async () => {
+    const send = (payload: unknown) => app.inject({ method: 'POST', url: '/client-errors', payload: payload as object, remoteAddress: '10.9.9.9' });
+    const ok = await send({ source: 'android-native', message: 'java.lang.IllegalStateException: x', stack: 'at a.b(C.kt:1)', device: 'Xiaomi X', android: '14 (SDK 34)', app: '1.0.0' });
+    expect(ok.statusCode).toBe(204);
+    expect((await send({ message: 'no source' })).statusCode).toBe(400);
+    const big = await app.inject({ method: 'POST', url: '/client-errors', payload: { source: 'x', message: 'y'.repeat(70000) }, remoteAddress: '10.9.9.8' });
+    expect(big.statusCode).toBe(413);
+    let last = 0;
+    for (let i = 0; i < 30; i++) last = (await send({ source: 'js', message: 'flood' })).statusCode;
+    expect(last).toBe(429);
+  });
+});
+
 describe('CORS', () => {
   it('preflight барои PATCH ва DELETE (панели веб)', async () => {
     for (const m of ['PATCH', 'DELETE']) {
